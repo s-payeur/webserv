@@ -294,6 +294,7 @@ int	parse_root(const std::string &directive, const std::vector<std::string> &arg
 	else
 		path = working_directory + '/' + args[0];
 
+	// Normalize path
 	std::string	root = normalize_path(directive, l, path);
 	if (root.empty())
 		return (-1);
@@ -301,6 +302,57 @@ int	parse_root(const std::string &directive, const std::vector<std::string> &arg
 		return (too_long_path_after_resolution_error(directive, l, root.substr(0, 10) + "..."));
 
 //	std::cout << "-->" << root << std::endl;
+	return (0);
+}
+
+////////////////////////////////////////////////////////////////////////////////
+
+int	parse_autoindex(const std::string &directive, const std::vector<std::string> &args, const size_t l)
+{
+	std::string	value;
+	bool		autoindex;
+
+	value = args[0];
+	for (std::string::iterator it = value.begin(); it != value.end(); it++)
+		*it = std::tolower(*it);
+	if (value == "on")
+		autoindex = true;
+	else if (value == "off")
+		autoindex = false;
+	else
+		return (invalid_value_error(directive, l, value));
+
+//	std::cout << std::boolalpha << "-->" << autoindex << std::endl;
+	return (0);
+}
+
+////////////////////////////////////////////////////////////////////////////////
+
+int	parse_index(const std::string &directive, const std::vector<std::string> &args, const size_t l)
+{
+	std::vector<std::string>	pages;
+	std::string					page;
+
+	// Get pages
+	for (std::vector<std::string>::const_iterator it = args.begin(); it != args.end(); it++)
+	{
+		// Normalize page
+		page = normalize_path(directive, l, *it);
+		if (page.empty())
+			return (-1);
+		// Remove the starting '/' added if not needed
+		if ((*it)[0] != '/' && page[0] == '/')
+			page = page.substr(1);
+		if (page.size() >= PATH_MAX)
+			return (too_long_path_after_resolution_error(directive, l, page.substr(0, 10) + "..."));
+		if (!(page.empty()) && std::find(pages.begin(), pages.end(), page) == pages.end())
+			pages.push_back(page);
+	}
+
+//	std::cout << "-->";
+//	for (std::vector<std::string>::const_iterator it = pages.begin(); it != pages.end(); it++)
+//		std::cout << *it << " ";
+//	std::cout << std::endl;
 	return (0);
 }
 
@@ -400,11 +452,27 @@ int	parseConfigFile(const std::string &filename) {
 				if (parse_root(directive, args, l) < 0)
 					return (-1);
 			}
-			else if (*token == "autoindex") {
-				// Handle autoindex directive
-			} else if (*token == "index") {
-				// Handle index directive
-			} else if (*token == "listen") {
+			else if (*token == "autoindex")
+			{
+				std::string					directive;
+				std::vector<std::string>	args;
+
+				if (parse_directive(directive, args, sections.top(), HTTP | SERVER | LOCATION, tokens, token, std::not_equal_to<std::string::size_type>(), 1, l) < 0)
+					return (-1);
+				if (parse_autoindex(directive, args, l) < 0)
+					return (-1);
+			}
+			else if (*token == "index")
+			{
+				std::string					directive;
+				std::vector<std::string>	args;
+
+				if (parse_directive(directive, args, sections.top(), HTTP | SERVER | LOCATION, tokens, token, std::less<std::string::size_type>(), 1, l) < 0)
+					return (-1);
+				if (parse_index(directive, args, l) < 0)
+					return (-1);
+			}
+			else if (*token == "listen") {
 				// Handle listen directive
 			} else if (*token == "server_name") {
 				// Handle server_name directive
