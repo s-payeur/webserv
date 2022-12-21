@@ -505,6 +505,19 @@ int	parse_listen(const std::string &directive, const std::vector<std::string> &a
 
 ////////////////////////////////////////////////////////////////////////////////
 
+int	parse_server_name(const std::string &directive, const std::vector<std::string> &args, const size_t l)
+{
+	const std::set<std::string>	server_names(args.begin(), args.end());
+
+//	std::cout << "-->";
+//	for (std::set<std::string>::const_iterator it = server_names.begin(); it != server_names.end(); it++)
+//		std::cout << *it << " ";
+//	std::cout << std::endl;
+	return (0);
+}
+
+////////////////////////////////////////////////////////////////////////////////
+
 int	parseConfigFile(const std::string &filename) {
 	std::ifstream file(filename);
 	std::string line;
@@ -513,7 +526,8 @@ int	parseConfigFile(const std::string &filename) {
 	size_t	l = 0;
 	sections.push(NONE); // default context
 
-	while (std::getline(file, line)) {
+	while (std::getline(file, line))
+	{
 		l++;
 		// Split the line into tokens
 		std::vector<std::string> tokens;
@@ -538,22 +552,23 @@ int	parseConfigFile(const std::string &filename) {
 			}
 		}
 
-		// skip empty line and commented lined
+		// Skip empty line and commented lined
 		if (tokens.empty() || tokens[0] == "#")
 			continue ;
 
 		// Check the first token to determine the current context
-		if (tokens.size() > 0) {
-			if (tokens[0] == "http") {
+		if (tokens.size() > 0)
+		{
+			// Enter a new section by encountering 'http', 'server' or 'location'
+			// Leave the current section by encountering '}'
+			if (tokens[0] == "http")
 				sections.push(HTTP);
-			} else if (tokens[0] == "server") {
+			else if (tokens[0] == "server")
 				sections.push(SERVER);
-			} else if (tokens[0] == "location") {
+			else if (tokens[0] == "location")
 				sections.push(LOCATION);
-			} else if (tokens[0] == "}") {
-				// Return to the previous context when we leave a context
+			else if (tokens[0] == "}")
 				sections.pop();
-			}
 		}
 
 		for (std::vector<std::string>::const_iterator token = tokens.begin(); token != tokens.end(); token++)
@@ -628,9 +643,18 @@ int	parseConfigFile(const std::string &filename) {
 					return (-1);
 				if (parse_listen(directive, args, l) < 0)
 					return (-1);
-			} else if (*token == "server_name") {
-				// Handle server_name directive
-			} else if (*token == "return") {
+			}
+			else if (*token == "server_name")
+			{
+				std::string					directive;
+				std::vector<std::string>	args;
+
+				if (parse_directive(directive, args, sections.top(), SERVER, tokens, token, std::less<std::string::size_type>(), 1, l) < 0)
+					return (-1);
+				if (parse_server_name(directive, args, l) < 0)
+					return (-1);
+			}
+			else if (*token == "return") {
 				// Handle return directive
 			} else if (*token == "fastcgi_pass") {
 				// Handle fastcgi_pass directive
