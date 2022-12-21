@@ -10,17 +10,19 @@
 /*																			  */
 /* ************************************************************************** */
 
-#include <string>
 #include <iostream>
 #include <fstream>
 #include <sstream>
 #include <string>
+#include <cstring>
 #include <stack>
 #include <vector>
 #include <set>
 #include <functional>
 #include <limits.h>	// PATH_MAX (root)
 #include <unistd.h>	// readlink (root)
+#include <netdb.h>		// getaddrinfo (listen)
+#include <arpa/inet.h>	// inet_ntop (listen)
 
 enum e_section {
 	NONE = 0,
@@ -47,6 +49,11 @@ int	invalid_number_of_arguments_error(const std::string &directive, const size_t
 	return (parsing_error("invalid number of arguments in '", directive, "' directive (line ", l, ")"));
 }
 
+int	too_long_argument_error(const std::string &directive, const size_t l, const std::string &short_path)
+{
+	return (parsing_error("too long argument '", short_path, "' started in '", directive, "' directive (line ", l, ")"));
+}
+
 int	invalid_value_error(const std::string &directive, const size_t l, const std::string &value)
 {
 	return (parsing_error("invalid value '", value, "' in '", directive, "' directive (line ", l, ")"));
@@ -57,25 +64,46 @@ int	value_must_be_between_error(const std::string &directive, const size_t l, co
 	return (parsing_error("value '", value, unit, "' must be between ", min, unit, " and ", max, unit, " in '", directive, "' directive (line ", l, ")"));
 }
 
+int	invalid_host_error(const std::string &directive, const size_t l, const std::string &value)
+{
+	return (parsing_error("invalid host in '", value, "' of the '", directive, "' directive (line ", l, ")"));
+}
+
+int	host_must_be_between_error(const std::string &directive, const size_t l, const std::string &host, const long long min, const long long max)
+{
+	return (parsing_error("host '", host, "' bytes must be between ", min, " and ", max, " in '", directive, "' directive (line ", l, ")"));
+}
+
+std::string	host_not_found_error(const std::string &directive, const size_t l, const std::string &host_port)
+{
+	parsing_error("host not found in '", host_port, "' of the '", directive, "' directive (line ", l, ")");
+	return (std::string());
+}
+
+int	invalid_port_error(const std::string &directive, const size_t l, const std::string &value)
+{
+	return (parsing_error("invalid port in '", value, "' of the '", directive, "' directive (line ", l, ")"));
+}
+
+int	port_must_be_between_error(const std::string &directive, const size_t l, const std::string &port, const long long min, const long long max)
+{
+	return (parsing_error("port '", port, "' must be between ", min, " and ", max, " in '", directive, "' directive (line ", l, ")"));
+}
+
 int	invalid_method_error(const std::string &directive, const size_t l, const std::string &method)
 {
 	return (parsing_error("invalid method '", method, "' in '", directive, "' directive (line ", l, ")"));
 }
 
-int	too_long_argument_error(const std::string &directive, const size_t l, const std::string &short_path)
+std::string	symbolic_link_loop_error(const std::string &directive, const size_t l, const std::string &path)
 {
-	return (parsing_error("too long argument '", short_path, "' started in '", directive, "' directive (line ", l, ")"));
+	parsing_error("symbolic link loop detected in path '", path, "' of the '", directive, "' directive (line ", l, ")");
+	return (std::string());
 }
 
 int too_long_path_after_resolution_error(const std::string &directive, const size_t l, const std::string &short_path)
 {
 	return (parsing_error("too long path '", short_path, "' after resolution started in '", directive, "' directive (line ", l, ")"));
-}
-
-std::string	symbolic_link_loop_error(const std::string &directive, const size_t l, const std::string &path)
-{
-	parsing_error("symbolic link loop detected in path '", path, "' in '", directive, "' directive (line ", l, ")");
-	return (std::string());
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -212,9 +240,10 @@ int	parse_limit_except(const std::string &directive, const std::vector<std::stri
 
 static std::string	resolve_symbolic_link(std::string path)
 {
-	char		buffer[PATH_MAX] = {'\0'};
+	char		buffer[PATH_MAX];
 	std::string	link_target;
 
+	std::memset(buffer, 0, sizeof(char) * PATH_MAX);
 	link_target = readlink(path.c_str(), buffer, PATH_MAX) < 0 ? std::string() : std::string(buffer);
 	if (link_target.empty())
 		return (path);
@@ -358,6 +387,124 @@ int	parse_index(const std::string &directive, const std::vector<std::string> &ar
 
 ////////////////////////////////////////////////////////////////////////////////
 
+static std::string	resolve_hostname(const std::string &directive, const size_t l, const std::string &host_port, const std::string &hostname)
+{
+	char			ip[INET_ADDRSTRLEN];
+	struct addrinfo	hints;
+	struct addrinfo	*result;
+
+	// Set up hints structure (IPV4)
+	std::memset(&hints, 0, sizeof(struct addrinfo));
+	hints.ai_family = AF_INET;
+
+	// Call getaddrinfo
+	if (getaddrinfo(hostname.c_str(), NULL, &hints, &result) != 0)
+		return (host_not_found_error(directive, l, host_port));
+
+	// Extract the IP address from the result
+	if (!(inet_ntop(AF_INET, &(reinterpret_cast<struct sockaddr_in*>(result->ai_addr)->sin_addr), ip, INET_ADDRSTRLEN)))
+		return (host_not_found_error(directive, l, host_port));
+
+	// Free the result of getaddrinfo
+	freeaddrinfo(result);
+	return (std::string(ip));
+}
+
+int	parse_listen(const std::string &directive, const std::vector<std::string> &args, const size_t l)
+{
+	std::string					host;
+	std::string					port;
+	std::vector<std::string>	host_components;
+	std::string::size_type		start;
+	std::string::size_type		end;
+
+	// Split listen into host and port
+	start = args[0].find(':');
+	end = args[0].rfind(':');
+	if (start != end)
+		return (invalid_value_error(directive, l, args[0]));
+	if (start == std::string::npos)
+	{
+		if (args[0] == "*")
+		{
+			host = "0.0.0.0";
+			port = !(geteuid()) ? "80" : "8000";
+		}
+		else if (args[0].find_first_not_of("0123456789.") != std::string::npos)
+		{
+			host = resolve_hostname(directive, l, args[0], args[0]);
+			if (host.empty())
+				return (-1);
+			port = !(geteuid()) ? "80" : "8000";
+		}
+		else if (args[0].find('.') == std::string::npos)
+		{
+			host = "0.0.0.0";
+			port = args[0];
+		}
+		else
+		{
+			host = args[0];
+			port = !(geteuid()) ? "80" : "8000";
+		}
+	}
+	else
+	{
+		host = args[0].substr(0, end);
+		port = args[0].substr(start + 1);
+		if (host == "*")
+		{
+			host = "0.0.0.0";
+		}
+		else if (host.find_first_not_of("0123456789.") != std::string::npos)
+		{
+			host = resolve_hostname(directive, l, args[0], host);
+			if (host.empty())
+				return (-1);
+		}
+	}
+
+	// Split host into multiple host_components using '.' as delimiter
+	start = 0;
+	end = host.find('.');
+	while (end != std::string::npos)
+	{
+		if (start == end)
+			return (invalid_host_error(directive, l, args[0]));
+		host_components.push_back(host.substr(start, end - start));
+		start = end + 1;
+		end = host.find('.', start);
+	}
+	if (start == end)
+		return (invalid_host_error(directive, l, args[0]));
+	if (start < host.size())
+		host_components.push_back(host.substr(start));
+	if (host_components.size() != 4)
+		return (invalid_host_error(directive, l, args[0]));
+
+	for (std::vector<std::string>::const_iterator it = host_components.begin(); it != host_components.end(); it++)
+	{
+		// Check host validity
+		if ((*it).find_first_not_of("0123456789") != std::string::npos)
+			return (invalid_host_error(directive, l, args[0]));
+		// Check host limit
+		if ((*it).size() > 3 || ((*it).size() == 3 && (*it).compare("255") > 0))
+			return (host_must_be_between_error(directive, l, host, 0, 255));
+	}
+
+	// Check port validity
+	if (port.find_first_not_of("0123456789") != std::string::npos)
+		return (invalid_port_error(directive, l, args[0]));
+	// Check port limit
+	if (port.size() > 5 || (port.size() == 5 && port.compare("65535") > 0))
+		return (port_must_be_between_error(directive, l, port, 0, 65535));
+
+//	std::cout << "-->" << host << ":" << port << std::endl;
+	return (0);
+}
+
+////////////////////////////////////////////////////////////////////////////////
+
 int	parseConfigFile(const std::string &filename) {
 	std::ifstream file(filename);
 	std::string line;
@@ -472,8 +619,15 @@ int	parseConfigFile(const std::string &filename) {
 				if (parse_index(directive, args, l) < 0)
 					return (-1);
 			}
-			else if (*token == "listen") {
-				// Handle listen directive
+			else if (*token == "listen")
+			{
+				std::string					directive;
+				std::vector<std::string>	args;
+
+				if (parse_directive(directive, args, sections.top(), SERVER, tokens, token, std::not_equal_to<std::string::size_type>(), 1, l) < 0)
+					return (-1);
+				if (parse_listen(directive, args, l) < 0)
+					return (-1);
 			} else if (*token == "server_name") {
 				// Handle server_name directive
 			} else if (*token == "return") {
