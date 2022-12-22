@@ -25,10 +25,10 @@
 #include <arpa/inet.h>	// inet_ntop (listen)
 
 enum e_context {
-	NONE = 0,
-	HTTP = 1,
-	SERVER = 2,
-	LOCATION = 4
+	MAIN = 1,
+	HTTP = 2,
+	SERVER = 4,
+	LOCATION = 8
 };
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -45,9 +45,24 @@ int	unexpected_character_error(const char character, const size_t l)
 	return (parsing_error("unexpected '", character, "' (line ", l, ")"));
 }
 
+int	unexpected_end_of_file_error(const size_t l)
+{
+	return (parsing_error("unexpected end of file, expecting ';' or '}' (line ", l, ")"));
+}
+
+int	unknown_directive_error(const std::string &directive, const size_t l)
+{
+	return (parsing_error("unknown directive '", directive, "' (line ", l, ")"));
+}
+
 int	directive_not_allowed_here_error(const std::string &directive, const size_t l)
 {
 	return (parsing_error("'", directive, "' directive is not allowed here (line ", l, ")"));
+}
+
+int	directive_has_no_opening_error(const std::string &directive, const size_t l)
+{
+	return (parsing_error("directive '", directive, "' has no opening '{' (line ", l, ")"));
 }
 
 int	invalid_number_of_arguments_error(const std::string &directive, const size_t l)
@@ -124,25 +139,48 @@ int too_long_path_after_resolution_error(const std::string &directive, const siz
 
 ////////////////////////////////////////////////////////////////////////////////
 
-template <class BinaryPredicate>
-int	parse_directive(std::string &directive, std::vector<std::string> &args, enum e_context context, size_t allowed_contexts, const std::vector<std::string> &tokens, std::vector<std::string>::const_iterator token, BinaryPredicate p, std::string::size_type args_size_limit, const size_t l)
+int	parse_directive(std::string &directive, std::vector<std::string> &args, enum e_context context, size_t allowed_contexts, const std::vector<std::string> &tokens, std::vector<std::string>::const_iterator &token, const size_t l)
 {
 	directive = *token++;
 	// Check context validity
 	if (!(context & allowed_contexts))
 		return (directive_not_allowed_here_error(directive, l));
 	// Get directive arguments
-	while (token != tokens.end() && *token != ";" && *token != "{" && *token != "}")
+	while (token != tokens.end() && *token != ";")
 	{
+		if (*token == "{" || *token == "}")
+			return (unexpected_character_error((*token)[0], l));
 		// Check argument size
 		if ((*token).size() >= PATH_MAX)
 			return (too_long_argument_error(directive, l, (*token).substr(0, 10) + "..."));
 		args.push_back(*token);
 		token++;
 	}
-	// Check arguments number
-	if (p(args.size(), args_size_limit))
-		return (invalid_number_of_arguments_error(directive, l));
+	if (token == tokens.end())
+		return (unexpected_end_of_file_error(l));
+	return (0);
+}
+
+int	parse_directive_http_server_location(std::string &directive, std::vector<std::string> &args, enum e_context context, size_t allowed_contexts, const std::vector<std::string> &tokens, std::vector<std::string>::const_iterator &token, const size_t l)
+{
+	directive = *token++;
+	// Check context validity
+	if (!(context & allowed_contexts))
+		return (directive_not_allowed_here_error(directive, l));
+	// Get context arguments
+	while (token != tokens.end() && *token != "{")
+	{
+		if (*token == ";" || *token == "}")
+			return (directive_has_no_opening_error(directive, l));
+		// Check argument size
+		if ((*token).size() >= PATH_MAX)
+			return (too_long_argument_error(directive, l, (*token).substr(0, 10) + "..."));
+		args.push_back(*token);
+		token++;
+		
+	}
+	if (token == tokens.end())
+		return (unexpected_end_of_file_error(l));
 	return (0);
 }
 
@@ -260,7 +298,7 @@ int	parse_listen(const std::string &directive, const std::vector<std::string> &a
 	if (port.size() > 5 || (port.size() == 5 && port.compare("65535") > 0))
 		return (port_must_be_between_error(directive, l, port, 0, 65535));
 
-//	std::cout << "-->" << host << ":" << port << std::endl;
+	std::cout << "-->" << host << ":" << port << std::endl;
 	return (0);
 }
 
@@ -270,12 +308,13 @@ int	parse_server_name(const std::string &directive, const std::vector<std::strin
 {
 	const std::set<std::string>	server_names(args.begin(), args.end());
 
-//	std::cout << "-->";
-//	for (std::set<std::string>::const_iterator it = server_names.begin(); it != server_names.end(); it++)
-//		std::cout << *it << " ";
-//	std::cout << std::endl;
+	std::cout << "-->";
+	for (std::set<std::string>::const_iterator it = server_names.begin(); it != server_names.end(); it++)
+		std::cout << *it << " ";
+	std::cout << std::endl;
 	return (0);
 }
+
 ////////////////////////////////////////////////////////////////////////////////
 
 int	parse_error_page(const std::string &directive, const std::vector<std::string> &args, const size_t l)
@@ -296,10 +335,10 @@ int	parse_error_page(const std::string &directive, const std::vector<std::string
 	// Get error page
 	error_page = args[args.size() - 1];
 
-//	std::cout << "-->";
-//	for (std::set<std::string>::const_iterator it = error_codes.begin(); it != error_codes.end(); it++)
-//		std::cout << *it << " ";
-//	std::cout << "<--> " << error_page << std::endl;
+	std::cout << "-->";
+	for (std::set<std::string>::const_iterator it = error_codes.begin(); it != error_codes.end(); it++)
+		std::cout << *it << " ";
+	std::cout << "<--> " << error_page << std::endl;
 	return (0);
 }
 
@@ -352,7 +391,7 @@ int	parse_client_max_body_size(const std::string &directive, const std::vector<s
 	else if (suffix == "g" || suffix == "G")
 		size *= 1024 * 1024 * 1024;
 
-//	std::cout << "-->" << size << std::endl;
+	std::cout << "-->" << size << std::endl;
 	return (0);
 }
 
@@ -371,10 +410,10 @@ int	parse_limit_except(const std::string &directive, const std::vector<std::stri
 			return (invalid_method_error(directive, l, *it));
 	}
 
-//	std::cout << "-->";
-//	for (std::set<std::string>::const_iterator it = http_methods.begin(); it != http_methods.end(); it++)
-//		std::cout << *it << " ";
-//	std::cout << std::endl;
+	std::cout << "-->";
+	for (std::set<std::string>::const_iterator it = http_methods.begin(); it != http_methods.end(); it++)
+		std::cout << *it << " ";
+	std::cout << std::endl;
 	return (0);
 }
 
@@ -511,7 +550,7 @@ int	parse_root(const std::string &directive, const std::vector<std::string> &arg
 	if (root.size() >= PATH_MAX)
 		return (too_long_path_after_resolution_error(directive, l, root.substr(0, 10) + "..."));
 
-//	std::cout << "-->" << root << std::endl;
+	std::cout << "-->" << root << std::endl;
 	return (0);
 }
 
@@ -532,7 +571,7 @@ int	parse_autoindex(const std::string &directive, const std::vector<std::string>
 	else
 		return (invalid_value_error(directive, l, value));
 
-//	std::cout << std::boolalpha << "-->" << autoindex << std::endl;
+	std::cout << std::boolalpha << "-->" << autoindex << std::endl;
 	return (0);
 }
 
@@ -559,49 +598,57 @@ int	parse_index(const std::string &directive, const std::vector<std::string> &ar
 			pages.push_back(page);
 	}
 
-//	std::cout << "-->";
-//	for (std::vector<std::string>::const_iterator it = pages.begin(); it != pages.end(); it++)
-//		std::cout << *it << " ";
-//	std::cout << std::endl;
+	std::cout << "-->";
+	for (std::vector<std::string>::const_iterator it = pages.begin(); it != pages.end(); it++)
+		std::cout << *it << " ";
+	std::cout << std::endl;
 	return (0);
 }
 
 ////////////////////////////////////////////////////////////////////////////////
 
-int	parseConfigFile(const std::string &filename) {
-	std::ifstream file(filename);
-	std::string line;
-	std::stack<e_context> contexts; // stack to keep track of the context hierarchy
+int	parse_configuration_file(std::ifstream &ifs)
+{
+	std::stack<e_context>	contexts;
+	std::string				line;
+	std::string::size_type	l;
 
-	contexts.push(NONE); // default context
-
-	size_t	l = 0;
-	while (std::getline(file, line))
+	// Default context
+	contexts.push(MAIN);
+	l = 0;
+	while (std::getline(ifs, line))
 	{
 		std::vector<std::string>	tokens;
-		std::istringstream iss(line);
-		std::string token;
+		std::string					token;
+		std::istringstream			iss;
 
-		l++;
-		// Split the line into tokens
+		l += 1;
+		iss = std::istringstream(line);
+		// Split the line into tokens (std::istringstream::operator>> use ' ', '\t' and '\n' as delimiters)
 		while (iss >> token)
 		{
-			// Split the token into multiple tokens if it contains ';{}' character
-			size_t pos = 0;
-			while ((pos = token.find_first_of(";{}")) != std::string::npos) {
-				std::string token1 = token.substr(0, pos);
-				std::string token2 = token.substr(pos, 1);
-				if (!token1.empty())
-					tokens.push_back(token1);
-				if (!token2.empty())
-					tokens.push_back(token2);
-				// Update the token for the next iteration
-				token = token.substr(pos + 1);
+			std::string::size_type	start;
+			std::string::size_type	end;
+
+			// Split the token using ";{}" as delimiters
+			start = 0;
+			end = token.find_first_of(";{}");
+			while (end != std::string::npos)
+			{
+				if (start != end)
+				{
+					tokens.push_back(token.substr(start, end - start));
+					start = end;
+				}
+				else
+				{
+					tokens.push_back(token.substr(start, 1));
+					start = end + 1;
+				}
+				end = token.find_first_of(";{}", start);
 			}
-			// Add the remaining token to the vector
-			if (!token.empty()) {
-				tokens.push_back(token);
-			}
+			if (start < token.size() && start != end)
+				tokens.push_back(token.substr(start));
 		}
 
 		for (std::vector<std::string>::iterator token = tokens.begin(); token != tokens.end(); token++)
@@ -614,6 +661,7 @@ int	parseConfigFile(const std::string &filename) {
 			}
 			if ((*token).find('#') != std::string::npos)
 				return (unexpected_character_error('#', l));
+//			std::cout << ">> " << *token << std::endl;
 		}
 		// Skip empty line and commented line
 		if (tokens.empty())
@@ -622,24 +670,63 @@ int	parseConfigFile(const std::string &filename) {
 		// Check the first token to determine the current context
 		// Enter a new context by encountering 'http', 'server' or 'location'
 		// Leave the current context by encountering '}'
-		if (tokens[0] == "http")
-			contexts.push(HTTP);
-		else if (tokens[0] == "server")
-			contexts.push(SERVER);
-		else if (tokens[0] == "location")
-			contexts.push(LOCATION);
-		else if (tokens[0] == "}")
-			contexts.pop();
+//		if (tokens[0] == "http")
+//			contexts.push(HTTP);
+//		else if (tokens[0] == "server")
+//			contexts.push(SERVER);
+//		else if (tokens[0] == "location")
+//			contexts.push(LOCATION);
+//		else if (tokens[0] == "}")
+//			contexts.pop();
 
 		for (std::vector<std::string>::const_iterator token = tokens.begin(); token != tokens.end(); token++)
 		{
-			if (*token == "listen")
+			if (*token == "http")
 			{
 				std::string					directive;
 				std::vector<std::string>	args;
 
-				if (parse_directive(directive, args, contexts.top(), SERVER, tokens, token, std::not_equal_to<std::string::size_type>(), 1, l) < 0)
+				if (parse_directive_http_server_location(directive, args, contexts.top(), MAIN, tokens, token, l) < 0)
 					return (-1);
+				if (args.size() != 0)
+					return (invalid_number_of_arguments_error(directive, l));
+				contexts.push(HTTP);
+			}
+			else if (*token == "server")
+			{
+				std::string					directive;
+				std::vector<std::string>	args;
+
+				if (parse_directive_http_server_location(directive, args, contexts.top(), HTTP, tokens, token, l) < 0)
+					return (-1);
+				if (args.size() != 0)
+					return (invalid_number_of_arguments_error(directive, l));
+				contexts.push(SERVER);
+			}
+			else if (*token == "location")
+			{
+				std::string					directive;
+				std::vector<std::string>	args;
+
+				if (parse_directive_http_server_location(directive, args, contexts.top(), SERVER | LOCATION, tokens, token, l) < 0)
+					return (-1);
+				if (args.size() != 0)
+					return (invalid_number_of_arguments_error(directive, l));
+				contexts.push(LOCATION);
+			}
+			else if (*token == "}")
+			{
+				contexts.pop();
+			}
+			else if (*token == "listen")
+			{
+				std::string					directive;
+				std::vector<std::string>	args;
+
+				if (parse_directive(directive, args, contexts.top(), SERVER, tokens, token, l) < 0)
+					return (-1);
+				if (args.size() != 1)
+					return (invalid_number_of_arguments_error(directive, l));
 				if (parse_listen(directive, args, l) < 0)
 					return (-1);
 			}
@@ -648,8 +735,10 @@ int	parseConfigFile(const std::string &filename) {
 				std::string					directive;
 				std::vector<std::string>	args;
 
-				if (parse_directive(directive, args, contexts.top(), SERVER, tokens, token, std::less<std::string::size_type>(), 1, l) < 0)
+				if (parse_directive(directive, args, contexts.top(), SERVER, tokens, token, l) < 0)
 					return (-1);
+				if (args.size() < 1)
+					return (invalid_number_of_arguments_error(directive, l));
 				if (parse_server_name(directive, args, l) < 0)
 					return (-1);
 			}
@@ -658,8 +747,10 @@ int	parseConfigFile(const std::string &filename) {
 				std::string					directive;
 				std::vector<std::string>	args;
 
-				if (parse_directive(directive, args, contexts.top(), HTTP | SERVER | LOCATION, tokens, token, std::less<std::string::size_type>(), 2, l) < 0)
+				if (parse_directive(directive, args, contexts.top(), HTTP | SERVER | LOCATION, tokens, token, l) < 0)
 					return (-1);
+				if (args.size() < 2)
+					return (invalid_number_of_arguments_error(directive, l));
 				if (parse_error_page(directive, args, l) < 0)
 					return (-1);
 			}
@@ -668,8 +759,10 @@ int	parseConfigFile(const std::string &filename) {
 				std::string					directive;
 				std::vector<std::string>	args;
 
-				if (parse_directive(directive, args, contexts.top(), HTTP | SERVER | LOCATION, tokens, token, std::not_equal_to<std::string::size_type>(), 1, l) < 0)
+				if (parse_directive(directive, args, contexts.top(), HTTP | SERVER | LOCATION, tokens, token, l) < 0)
 					return (-1);
+				if (args.size() != 1)
+					return (invalid_number_of_arguments_error(directive, l));
 				if (parse_client_max_body_size(directive, args, l) < 0)
 					return (-1);
 			}
@@ -679,8 +772,10 @@ int	parseConfigFile(const std::string &filename) {
 				std::vector<std::string>	args;
 
 				// Normally allowed only in LOCATION but allowed in HTTP and SERVER to respect the subject's requirements
-				if (parse_directive(directive, args, contexts.top(), HTTP | SERVER | LOCATION, tokens, token, std::less<std::string::size_type>(), 1, l) < 0)
+				if (parse_directive(directive, args, contexts.top(), HTTP | SERVER | LOCATION, tokens, token, l) < 0)
 					return (-1);
+				if (args.size() < 1)
+					return (invalid_number_of_arguments_error(directive, l));
 				if (parse_limit_except(directive, args, l) < 0)
 					return (-1);
 			}
@@ -689,12 +784,10 @@ int	parseConfigFile(const std::string &filename) {
 				std::string					directive;
 				std::vector<std::string>	args;
 
-				if (parse_directive(directive, args, contexts.top(), SERVER | LOCATION, tokens, token, std::less<std::string::size_type>(), 1, l) < 0)
+				if (parse_directive(directive, args, contexts.top(), SERVER | LOCATION, tokens, token, l) < 0)
 					return (-1);
-				directive.clear();
-				args.clear();
-				if (parse_directive(directive, args, contexts.top(), SERVER | LOCATION, tokens, token, std::greater<std::string::size_type>(), 2, l) < 0)
-					return (-1);
+				if (args.size() < 1 || 2 < args.size())
+					return (invalid_number_of_arguments_error(directive, l));
 				if (parse_return(directive, args, l) < 0)
 					return (-1);
 			}
@@ -703,8 +796,10 @@ int	parseConfigFile(const std::string &filename) {
 				std::string					directive;
 				std::vector<std::string>	args;
 
-				if (parse_directive(directive, args, contexts.top(), HTTP | SERVER | LOCATION, tokens, token, std::not_equal_to<std::string::size_type>(), 1, l) < 0)
+				if (parse_directive(directive, args, contexts.top(), HTTP | SERVER | LOCATION, tokens, token, l) < 0)
 					return (-1);
+				if (args.size() != 1)
+					return (invalid_number_of_arguments_error(directive, l));
 				if (parse_root(directive, args, l) < 0)
 					return (-1);
 			}
@@ -713,8 +808,10 @@ int	parseConfigFile(const std::string &filename) {
 				std::string					directive;
 				std::vector<std::string>	args;
 
-				if (parse_directive(directive, args, contexts.top(), HTTP | SERVER | LOCATION, tokens, token, std::not_equal_to<std::string::size_type>(), 1, l) < 0)
+				if (parse_directive(directive, args, contexts.top(), HTTP | SERVER | LOCATION, tokens, token, l) < 0)
 					return (-1);
+				if (args.size() != 1)
+					return (invalid_number_of_arguments_error(directive, l));
 				if (parse_autoindex(directive, args, l) < 0)
 					return (-1);
 			}
@@ -723,33 +820,56 @@ int	parseConfigFile(const std::string &filename) {
 				std::string					directive;
 				std::vector<std::string>	args;
 
-				if (parse_directive(directive, args, contexts.top(), HTTP | SERVER | LOCATION, tokens, token, std::less<std::string::size_type>(), 1, l) < 0)
+				if (parse_directive(directive, args, contexts.top(), HTTP | SERVER | LOCATION, tokens, token, l) < 0)
 					return (-1);
+				if (args.size() < 1)
+					return (invalid_number_of_arguments_error(directive, l));
 				if (parse_index(directive, args, l) < 0)
 					return (-1);
 			}
 			else if (*token == "fastcgi_pass") {
 				// Handle fastcgi_pass directive
 			}
-/*
-			std::string context;
-			if (contexts.top() == NONE)
-				context = "NONE";
-			if (contexts.top() == HTTP)
-				context = "HTTP";
-			if (contexts.top() == SERVER)
-				context = "SERVER";
-			if (contexts.top() == LOCATION)
-				context = "LOCATION";
-			std::cout << context << " -> " << *token << std::endl;
-*/
+			else
+				return (unknown_directive_error(*token, l));
 		}
 	}
 	return (0);
 }
 
-int main(int argc, char **argv) {
-	if (parseConfigFile(argv[1]) < 0)
+int	parse(const std::string &configuration_file)
+{
+	std::ifstream	ifs;
+
+	ifs.open(configuration_file.c_str());
+	if (!(ifs.is_open()))
+	{
+		std::cerr << "webserv: " << configuration_file << ": " << strerror(errno) << std::endl;
+		return (-1);
+	}
+	if (parse_configuration_file(ifs) < 0)
+	{
+		ifs.close();
+		return (-1);
+	}
+	ifs.close();
+	return (0);
+}
+
+int	main(int argc, char **argv)
+{
+	std::string	configuration_file;
+
+	if (argc > 2)
+	{
+		std::cerr << "webserv: too many arguments" << std::endl;
+		return (1);
+	}
+	if (argc == 1)
+		configuration_file = "conf/default.conf";
+	else
+		configuration_file = argv[1];
+	if (parse(configuration_file) < 0)
 		return (1);
 	return (0);
 }
