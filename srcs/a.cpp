@@ -40,10 +40,16 @@ int	parsing_error(T1 a, T2 b = "", T3 c = "", T4 d = "", T5 e = "", T6 f = "", T
 	return (-1);
 }
 
+int	unexpected_character_error(const char character, const size_t l)
+{
+	return (parsing_error("unexpected '", character, "' (line ", l, ")"));
+}
+
 int	directive_not_allowed_here_error(const std::string &directive, const size_t l)
 {
 	return (parsing_error("'", directive, "' directive is not allowed here (line ", l, ")"));
 }
+
 int	invalid_number_of_arguments_error(const std::string &directive, const size_t l)
 {
 	return (parsing_error("invalid number of arguments in '", directive, "' directive (line ", l, ")"));
@@ -567,17 +573,19 @@ int	parseConfigFile(const std::string &filename) {
 	std::string line;
 	std::stack<e_context> contexts; // stack to keep track of the context hierarchy
 
-	size_t	l = 0;
 	contexts.push(NONE); // default context
 
+	size_t	l = 0;
 	while (std::getline(file, line))
 	{
-		l++;
-		// Split the line into tokens
-		std::vector<std::string> tokens;
+		std::vector<std::string>	tokens;
 		std::istringstream iss(line);
 		std::string token;
-		while (iss >> token) {
+
+		l++;
+		// Split the line into tokens
+		while (iss >> token)
+		{
 			// Split the token into multiple tokens if it contains ';{}' character
 			size_t pos = 0;
 			while ((pos = token.find_first_of(";{}")) != std::string::npos) {
@@ -596,24 +604,32 @@ int	parseConfigFile(const std::string &filename) {
 			}
 		}
 
-		// Skip empty line and commented lined
-		if (tokens.empty() || tokens[0] == "#")
+		for (std::vector<std::string>::iterator token = tokens.begin(); token != tokens.end(); token++)
+		{
+			// Remove everything after a comment
+			if ((*token)[0] == '#')
+			{
+				tokens.erase(token, tokens.end());
+				break ;
+			}
+			if ((*token).find('#') != std::string::npos)
+				return (unexpected_character_error('#', l));
+		}
+		// Skip empty line and commented line
+		if (tokens.empty())
 			continue ;
 
 		// Check the first token to determine the current context
-		if (tokens.size() > 0)
-		{
-			// Enter a new context by encountering 'http', 'server' or 'location'
-			// Leave the current context by encountering '}'
-			if (tokens[0] == "http")
-				contexts.push(HTTP);
-			else if (tokens[0] == "server")
-				contexts.push(SERVER);
-			else if (tokens[0] == "location")
-				contexts.push(LOCATION);
-			else if (tokens[0] == "}")
-				contexts.pop();
-		}
+		// Enter a new context by encountering 'http', 'server' or 'location'
+		// Leave the current context by encountering '}'
+		if (tokens[0] == "http")
+			contexts.push(HTTP);
+		else if (tokens[0] == "server")
+			contexts.push(SERVER);
+		else if (tokens[0] == "location")
+			contexts.push(LOCATION);
+		else if (tokens[0] == "}")
+			contexts.pop();
 
 		for (std::vector<std::string>::const_iterator token = tokens.begin(); token != tokens.end(); token++)
 		{
