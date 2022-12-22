@@ -24,7 +24,7 @@
 #include <netdb.h>		// getaddrinfo (listen)
 #include <arpa/inet.h>	// inet_ntop (listen)
 
-enum e_section {
+enum e_context {
 	NONE = 0,
 	HTTP = 1,
 	SERVER = 2,
@@ -95,6 +95,16 @@ int	invalid_method_error(const std::string &directive, const size_t l, const std
 	return (parsing_error("invalid method '", method, "' in '", directive, "' directive (line ", l, ")"));
 }
 
+int	invalid_return_code_error(const std::string &directive, const size_t l, const std::string &code)
+{
+	return (parsing_error("invalid return code '", code, "' in '", directive, "' directive (line ", l, ")"));
+}
+
+int	return_code_must_be_between_error(const std::string &directive, const size_t l, const std::string &code, const long long min, const long long max)
+{
+	return (parsing_error("return code '", code, "' must be between ", min, " and ", max, " in '", directive, "' directive (line ", l, ")"));
+}
+
 std::string	symbolic_link_loop_error(const std::string &directive, const size_t l, const std::string &path)
 {
 	parsing_error("symbolic link loop detected in path '", path, "' of the '", directive, "' directive (line ", l, ")");
@@ -109,11 +119,11 @@ int too_long_path_after_resolution_error(const std::string &directive, const siz
 ////////////////////////////////////////////////////////////////////////////////
 
 template <class BinaryPredicate>
-int	parse_directive(std::string &directive, std::vector<std::string> &args, enum e_section section, size_t allowed_sections, const std::vector<std::string> &tokens, std::vector<std::string>::const_iterator token, BinaryPredicate p, std::string::size_type args_size_limit, const size_t l)
+int	parse_directive(std::string &directive, std::vector<std::string> &args, enum e_context context, size_t allowed_contexts, const std::vector<std::string> &tokens, std::vector<std::string>::const_iterator token, BinaryPredicate p, std::string::size_type args_size_limit, const size_t l)
 {
 	directive = *token++;
-	// Check section validity
-	if (!(section & allowed_sections))
+	// Check context validity
+	if (!(context & allowed_contexts))
 		return (directive_not_allowed_here_error(directive, l));
 	// Get directive arguments
 	while (token != tokens.end() && *token != ";" && *token != "{" && *token != "}")
@@ -132,6 +142,136 @@ int	parse_directive(std::string &directive, std::vector<std::string> &args, enum
 
 ////////////////////////////////////////////////////////////////////////////////
 
+static std::string	resolve_hostname(const std::string &directive, const size_t l, const std::string &host_port, const std::string &hostname)
+{
+	char			ip[INET_ADDRSTRLEN];
+	struct addrinfo	hints;
+	struct addrinfo	*result;
+
+	// Set up hints structure (IPV4)
+	std::memset(&hints, 0, sizeof(struct addrinfo));
+	hints.ai_family = AF_INET;
+
+	// Call getaddrinfo
+	if (getaddrinfo(hostname.c_str(), NULL, &hints, &result) != 0)
+		return (host_not_found_error(directive, l, host_port));
+
+	// Extract the IP address from the result
+	if (!(inet_ntop(AF_INET, &(reinterpret_cast<struct sockaddr_in*>(result->ai_addr)->sin_addr), ip, INET_ADDRSTRLEN)))
+		return (host_not_found_error(directive, l, host_port));
+
+	// Free the result of getaddrinfo
+	freeaddrinfo(result);
+	return (std::string(ip));
+}
+
+int	parse_listen(const std::string &directive, const std::vector<std::string> &args, const size_t l)
+{
+	std::string					host;
+	std::string					port;
+	std::vector<std::string>	host_components;
+	std::string::size_type		start;
+	std::string::size_type		end;
+
+	// Split listen into host and port
+	start = args[0].find(':');
+	end = args[0].rfind(':');
+	if (start != end)
+		return (invalid_value_error(directive, l, args[0]));
+	if (start == std::string::npos)
+	{
+		if (args[0] == "*")
+		{
+			host = "0.0.0.0";
+			port = !(geteuid()) ? "80" : "8000";
+		}
+		else if (args[0].find_first_not_of("0123456789.") != std::string::npos)
+		{
+			host = resolve_hostname(directive, l, args[0], args[0]);
+			if (host.empty())
+				return (-1);
+			port = !(geteuid()) ? "80" : "8000";
+		}
+		else if (args[0].find('.') == std::string::npos)
+		{
+			host = "0.0.0.0";
+			port = args[0];
+		}
+		else
+		{
+			host = args[0];
+			port = !(geteuid()) ? "80" : "8000";
+		}
+	}
+	else
+	{
+		host = args[0].substr(0, end);
+		port = args[0].substr(start + 1);
+		if (host == "*")
+		{
+			host = "0.0.0.0";
+		}
+		else if (host.find_first_not_of("0123456789.") != std::string::npos)
+		{
+			host = resolve_hostname(directive, l, args[0], host);
+			if (host.empty())
+				return (-1);
+		}
+	}
+
+	// Split host into multiple host_components using '.' as delimiter
+	start = 0;
+	end = host.find('.');
+	while (end != std::string::npos)
+	{
+		if (start == end)
+			return (invalid_host_error(directive, l, args[0]));
+		host_components.push_back(host.substr(start, end - start));
+		start = end + 1;
+		end = host.find('.', start);
+	}
+	if (start == end)
+		return (invalid_host_error(directive, l, args[0]));
+	if (start < host.size())
+		host_components.push_back(host.substr(start));
+	if (host_components.size() != 4)
+		return (invalid_host_error(directive, l, args[0]));
+
+	for (std::vector<std::string>::const_iterator it = host_components.begin(); it != host_components.end(); it++)
+	{
+		// Check host validity
+		if ((*it).find_first_not_of("0123456789") != std::string::npos)
+			return (invalid_host_error(directive, l, args[0]));
+		// Check host limit
+		if ((*it).size() > 3 || ((*it).size() == 3 && (*it).compare("255") > 0))
+			return (host_must_be_between_error(directive, l, host, 0, 255));
+	}
+
+	// Check port validity
+	if (port.find_first_not_of("0123456789") != std::string::npos)
+		return (invalid_port_error(directive, l, args[0]));
+	// Check port limit
+	if (port.size() > 5 || (port.size() == 5 && port.compare("65535") > 0))
+		return (port_must_be_between_error(directive, l, port, 0, 65535));
+
+//	std::cout << "-->" << host << ":" << port << std::endl;
+	return (0);
+}
+
+////////////////////////////////////////////////////////////////////////////////
+
+int	parse_server_name(const std::string &directive, const std::vector<std::string> &args, const size_t l)
+{
+	const std::set<std::string>	server_names(args.begin(), args.end());
+
+//	std::cout << "-->";
+//	for (std::set<std::string>::const_iterator it = server_names.begin(); it != server_names.end(); it++)
+//		std::cout << *it << " ";
+//	std::cout << std::endl;
+	return (0);
+}
+////////////////////////////////////////////////////////////////////////////////
+
 int	parse_error_page(const std::string &directive, const std::vector<std::string> &args, const size_t l)
 {
 	const std::set<std::string>	error_codes(args.begin(), args.end() - 1);
@@ -140,12 +280,8 @@ int	parse_error_page(const std::string &directive, const std::vector<std::string
 	for (std::set<std::string>::const_iterator it = error_codes.begin(); it != error_codes.end(); it++)
 	{
 		// Check error codes validity
-		for (size_t j = 0; j < (*it).size(); j++)
-		{
-			if (!(std::isdigit((*it)[j])))
+		if ((*it).find_first_not_of("0123456789") != std::string::npos)
 				return (invalid_value_error(directive, l, *it));
-		}
-
 		// Check error codes limit
 		if (std::stoi(*it) < 300 || std::stoi(*it) > 599)
 			return (value_must_be_between_error(directive, l, *it, 300, 599, ""));
@@ -233,6 +369,45 @@ int	parse_limit_except(const std::string &directive, const std::vector<std::stri
 //	for (std::set<std::string>::const_iterator it = http_methods.begin(); it != http_methods.end(); it++)
 //		std::cout << *it << " ";
 //	std::cout << std::endl;
+	return (0);
+}
+
+////////////////////////////////////////////////////////////////////////////////
+
+int	parse_return(const std::string &directive, const std::vector<std::string> &args, const size_t l)
+{
+	std::string	code;
+	std::string	text_url;
+
+	// Get code and text_url
+	if (args.size() == 1)
+	{
+		if (args[0].find_first_not_of("0123456789") == std::string::npos)
+		{
+			code = args[0];
+			text_url = "";
+		}
+		else
+		{
+			code = "301";
+			text_url = args[0];
+		}
+	}
+	else
+	{
+		code = args[0];
+		text_url = args[1];
+	}
+
+	// Check code validity
+	if (code.find_first_not_of("0123456789") != std::string::npos)
+		return (invalid_return_code_error(directive, l, code));
+	code = code.substr(code.find_first_not_of("0"));
+	// Check code limit
+	if (code.size() != 3 || code.compare("599") > 0)
+		return (return_code_must_be_between_error(directive, l, code, 100, 599));
+
+	std::cout << "-->" << code << " <--> " << text_url << std::endl;
 	return (0);
 }
 
@@ -387,144 +562,13 @@ int	parse_index(const std::string &directive, const std::vector<std::string> &ar
 
 ////////////////////////////////////////////////////////////////////////////////
 
-static std::string	resolve_hostname(const std::string &directive, const size_t l, const std::string &host_port, const std::string &hostname)
-{
-	char			ip[INET_ADDRSTRLEN];
-	struct addrinfo	hints;
-	struct addrinfo	*result;
-
-	// Set up hints structure (IPV4)
-	std::memset(&hints, 0, sizeof(struct addrinfo));
-	hints.ai_family = AF_INET;
-
-	// Call getaddrinfo
-	if (getaddrinfo(hostname.c_str(), NULL, &hints, &result) != 0)
-		return (host_not_found_error(directive, l, host_port));
-
-	// Extract the IP address from the result
-	if (!(inet_ntop(AF_INET, &(reinterpret_cast<struct sockaddr_in*>(result->ai_addr)->sin_addr), ip, INET_ADDRSTRLEN)))
-		return (host_not_found_error(directive, l, host_port));
-
-	// Free the result of getaddrinfo
-	freeaddrinfo(result);
-	return (std::string(ip));
-}
-
-int	parse_listen(const std::string &directive, const std::vector<std::string> &args, const size_t l)
-{
-	std::string					host;
-	std::string					port;
-	std::vector<std::string>	host_components;
-	std::string::size_type		start;
-	std::string::size_type		end;
-
-	// Split listen into host and port
-	start = args[0].find(':');
-	end = args[0].rfind(':');
-	if (start != end)
-		return (invalid_value_error(directive, l, args[0]));
-	if (start == std::string::npos)
-	{
-		if (args[0] == "*")
-		{
-			host = "0.0.0.0";
-			port = !(geteuid()) ? "80" : "8000";
-		}
-		else if (args[0].find_first_not_of("0123456789.") != std::string::npos)
-		{
-			host = resolve_hostname(directive, l, args[0], args[0]);
-			if (host.empty())
-				return (-1);
-			port = !(geteuid()) ? "80" : "8000";
-		}
-		else if (args[0].find('.') == std::string::npos)
-		{
-			host = "0.0.0.0";
-			port = args[0];
-		}
-		else
-		{
-			host = args[0];
-			port = !(geteuid()) ? "80" : "8000";
-		}
-	}
-	else
-	{
-		host = args[0].substr(0, end);
-		port = args[0].substr(start + 1);
-		if (host == "*")
-		{
-			host = "0.0.0.0";
-		}
-		else if (host.find_first_not_of("0123456789.") != std::string::npos)
-		{
-			host = resolve_hostname(directive, l, args[0], host);
-			if (host.empty())
-				return (-1);
-		}
-	}
-
-	// Split host into multiple host_components using '.' as delimiter
-	start = 0;
-	end = host.find('.');
-	while (end != std::string::npos)
-	{
-		if (start == end)
-			return (invalid_host_error(directive, l, args[0]));
-		host_components.push_back(host.substr(start, end - start));
-		start = end + 1;
-		end = host.find('.', start);
-	}
-	if (start == end)
-		return (invalid_host_error(directive, l, args[0]));
-	if (start < host.size())
-		host_components.push_back(host.substr(start));
-	if (host_components.size() != 4)
-		return (invalid_host_error(directive, l, args[0]));
-
-	for (std::vector<std::string>::const_iterator it = host_components.begin(); it != host_components.end(); it++)
-	{
-		// Check host validity
-		if ((*it).find_first_not_of("0123456789") != std::string::npos)
-			return (invalid_host_error(directive, l, args[0]));
-		// Check host limit
-		if ((*it).size() > 3 || ((*it).size() == 3 && (*it).compare("255") > 0))
-			return (host_must_be_between_error(directive, l, host, 0, 255));
-	}
-
-	// Check port validity
-	if (port.find_first_not_of("0123456789") != std::string::npos)
-		return (invalid_port_error(directive, l, args[0]));
-	// Check port limit
-	if (port.size() > 5 || (port.size() == 5 && port.compare("65535") > 0))
-		return (port_must_be_between_error(directive, l, port, 0, 65535));
-
-//	std::cout << "-->" << host << ":" << port << std::endl;
-	return (0);
-}
-
-////////////////////////////////////////////////////////////////////////////////
-
-int	parse_server_name(const std::string &directive, const std::vector<std::string> &args, const size_t l)
-{
-	const std::set<std::string>	server_names(args.begin(), args.end());
-
-//	std::cout << "-->";
-//	for (std::set<std::string>::const_iterator it = server_names.begin(); it != server_names.end(); it++)
-//		std::cout << *it << " ";
-//	std::cout << std::endl;
-	return (0);
-}
-
-////////////////////////////////////////////////////////////////////////////////
-
 int	parseConfigFile(const std::string &filename) {
 	std::ifstream file(filename);
 	std::string line;
-	std::stack<e_section> sections; // stack to keep track of the context hierarchy
+	std::stack<e_context> contexts; // stack to keep track of the context hierarchy
 
 	size_t	l = 0;
-	sections.push(NONE); // default context
+	contexts.push(NONE); // default context
 
 	while (std::getline(file, line))
 	{
@@ -559,26 +603,46 @@ int	parseConfigFile(const std::string &filename) {
 		// Check the first token to determine the current context
 		if (tokens.size() > 0)
 		{
-			// Enter a new section by encountering 'http', 'server' or 'location'
-			// Leave the current section by encountering '}'
+			// Enter a new context by encountering 'http', 'server' or 'location'
+			// Leave the current context by encountering '}'
 			if (tokens[0] == "http")
-				sections.push(HTTP);
+				contexts.push(HTTP);
 			else if (tokens[0] == "server")
-				sections.push(SERVER);
+				contexts.push(SERVER);
 			else if (tokens[0] == "location")
-				sections.push(LOCATION);
+				contexts.push(LOCATION);
 			else if (tokens[0] == "}")
-				sections.pop();
+				contexts.pop();
 		}
 
 		for (std::vector<std::string>::const_iterator token = tokens.begin(); token != tokens.end(); token++)
 		{
-			if (*token == "error_page")
+			if (*token == "listen")
 			{
 				std::string					directive;
 				std::vector<std::string>	args;
 
-				if (parse_directive(directive, args, sections.top(), HTTP | SERVER | LOCATION, tokens, token, std::less<std::string::size_type>(), 2, l) < 0)
+				if (parse_directive(directive, args, contexts.top(), SERVER, tokens, token, std::not_equal_to<std::string::size_type>(), 1, l) < 0)
+					return (-1);
+				if (parse_listen(directive, args, l) < 0)
+					return (-1);
+			}
+			else if (*token == "server_name")
+			{
+				std::string					directive;
+				std::vector<std::string>	args;
+
+				if (parse_directive(directive, args, contexts.top(), SERVER, tokens, token, std::less<std::string::size_type>(), 1, l) < 0)
+					return (-1);
+				if (parse_server_name(directive, args, l) < 0)
+					return (-1);
+			}
+			else if (*token == "error_page")
+			{
+				std::string					directive;
+				std::vector<std::string>	args;
+
+				if (parse_directive(directive, args, contexts.top(), HTTP | SERVER | LOCATION, tokens, token, std::less<std::string::size_type>(), 2, l) < 0)
 					return (-1);
 				if (parse_error_page(directive, args, l) < 0)
 					return (-1);
@@ -588,7 +652,7 @@ int	parseConfigFile(const std::string &filename) {
 				std::string					directive;
 				std::vector<std::string>	args;
 
-				if (parse_directive(directive, args, sections.top(), HTTP | SERVER | LOCATION, tokens, token, std::not_equal_to<std::string::size_type>(), 1, l) < 0)
+				if (parse_directive(directive, args, contexts.top(), HTTP | SERVER | LOCATION, tokens, token, std::not_equal_to<std::string::size_type>(), 1, l) < 0)
 					return (-1);
 				if (parse_client_max_body_size(directive, args, l) < 0)
 					return (-1);
@@ -599,9 +663,23 @@ int	parseConfigFile(const std::string &filename) {
 				std::vector<std::string>	args;
 
 				// Normally allowed only in LOCATION but allowed in HTTP and SERVER to respect the subject's requirements
-				if (parse_directive(directive, args, sections.top(), HTTP | SERVER | LOCATION, tokens, token, std::less<std::string::size_type>(), 1, l) < 0)
+				if (parse_directive(directive, args, contexts.top(), HTTP | SERVER | LOCATION, tokens, token, std::less<std::string::size_type>(), 1, l) < 0)
 					return (-1);
 				if (parse_limit_except(directive, args, l) < 0)
+					return (-1);
+			}
+			else if (*token == "return")
+			{
+				std::string					directive;
+				std::vector<std::string>	args;
+
+				if (parse_directive(directive, args, contexts.top(), SERVER | LOCATION, tokens, token, std::less<std::string::size_type>(), 1, l) < 0)
+					return (-1);
+				directive.clear();
+				args.clear();
+				if (parse_directive(directive, args, contexts.top(), SERVER | LOCATION, tokens, token, std::greater<std::string::size_type>(), 2, l) < 0)
+					return (-1);
+				if (parse_return(directive, args, l) < 0)
 					return (-1);
 			}
 			else if (*token == "root")
@@ -609,7 +687,7 @@ int	parseConfigFile(const std::string &filename) {
 				std::string					directive;
 				std::vector<std::string>	args;
 
-				if (parse_directive(directive, args, sections.top(), HTTP | SERVER | LOCATION, tokens, token, std::not_equal_to<std::string::size_type>(), 1, l) < 0)
+				if (parse_directive(directive, args, contexts.top(), HTTP | SERVER | LOCATION, tokens, token, std::not_equal_to<std::string::size_type>(), 1, l) < 0)
 					return (-1);
 				if (parse_root(directive, args, l) < 0)
 					return (-1);
@@ -619,7 +697,7 @@ int	parseConfigFile(const std::string &filename) {
 				std::string					directive;
 				std::vector<std::string>	args;
 
-				if (parse_directive(directive, args, sections.top(), HTTP | SERVER | LOCATION, tokens, token, std::not_equal_to<std::string::size_type>(), 1, l) < 0)
+				if (parse_directive(directive, args, contexts.top(), HTTP | SERVER | LOCATION, tokens, token, std::not_equal_to<std::string::size_type>(), 1, l) < 0)
 					return (-1);
 				if (parse_autoindex(directive, args, l) < 0)
 					return (-1);
@@ -629,45 +707,23 @@ int	parseConfigFile(const std::string &filename) {
 				std::string					directive;
 				std::vector<std::string>	args;
 
-				if (parse_directive(directive, args, sections.top(), HTTP | SERVER | LOCATION, tokens, token, std::less<std::string::size_type>(), 1, l) < 0)
+				if (parse_directive(directive, args, contexts.top(), HTTP | SERVER | LOCATION, tokens, token, std::less<std::string::size_type>(), 1, l) < 0)
 					return (-1);
 				if (parse_index(directive, args, l) < 0)
 					return (-1);
 			}
-			else if (*token == "listen")
-			{
-				std::string					directive;
-				std::vector<std::string>	args;
-
-				if (parse_directive(directive, args, sections.top(), SERVER, tokens, token, std::not_equal_to<std::string::size_type>(), 1, l) < 0)
-					return (-1);
-				if (parse_listen(directive, args, l) < 0)
-					return (-1);
-			}
-			else if (*token == "server_name")
-			{
-				std::string					directive;
-				std::vector<std::string>	args;
-
-				if (parse_directive(directive, args, sections.top(), SERVER, tokens, token, std::less<std::string::size_type>(), 1, l) < 0)
-					return (-1);
-				if (parse_server_name(directive, args, l) < 0)
-					return (-1);
-			}
-			else if (*token == "return") {
-				// Handle return directive
-			} else if (*token == "fastcgi_pass") {
+			else if (*token == "fastcgi_pass") {
 				// Handle fastcgi_pass directive
 			}
 /*
 			std::string context;
-			if (sections.top() == NONE)
+			if (contexts.top() == NONE)
 				context = "NONE";
-			if (sections.top() == HTTP)
+			if (contexts.top() == HTTP)
 				context = "HTTP";
-			if (sections.top() == SERVER)
+			if (contexts.top() == SERVER)
 				context = "SERVER";
-			if (sections.top() == LOCATION)
+			if (contexts.top() == LOCATION)
 				context = "LOCATION";
 			std::cout << context << " -> " << *token << std::endl;
 */
