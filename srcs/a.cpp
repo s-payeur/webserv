@@ -31,7 +31,7 @@
 #include <algorithm>
 #include <functional>
 #include <limits.h>	// PATH_MAX (directive, root. index, cgi)
-#include <unistd.h>	// readlink (root, index, cgi)
+#include <unistd.h>	// geteuid, readlink (root, index, cgi)
 #include <netdb.h>		// getaddrinfo (listen)
 #include <arpa/inet.h>	// inet_ntop (listen)
 
@@ -511,12 +511,9 @@ int	parse_listen(const std::string &directive, const std::vector<std::string> &a
 
 int	parse_server_name(const std::string &directive, const std::vector<std::string> &args, const size_t l)
 {
-	const std::set<std::string>	server_names(args.begin(), args.end());
+	const std::string	server_name(args[0]);
 
-	std::cout << "-->";
-	for (std::set<std::string>::const_iterator it = server_names.begin(); it != server_names.end(); it++)
-		std::cout << *it << " ";
-	std::cout << std::endl;
+	std::cout << "-->" << server_name << std::endl;;
 	return (0);
 }
 
@@ -844,7 +841,7 @@ int	parse_configuration_file(std::ifstream &ifs)
 
 				if (parse_directive(ifs, directive, args, contexts.top(), SERVER, tokens, token, l) < 0)
 					return (-1);
-				if (args.size() < 1)
+				if (args.size() != 1)
 					return (invalid_number_of_arguments_error(directive, l));
 				if (parse_server_name(directive, args, l) < 0)
 					return (-1);
@@ -939,7 +936,7 @@ int	parse_configuration_file(std::ifstream &ifs)
 				std::string					directive;
 				std::vector<std::string>	args;
 
-				if (parse_directive(ifs, directive, args, contexts.top(), HTTP | SERVER | LOCATION, tokens, token, l) < 0)
+				if (parse_directive(ifs, directive, args, contexts.top(), LOCATION, tokens, token, l) < 0)
 					return (-1);
 				if (args.size() < 2)
 					return (invalid_number_of_arguments_error(directive, l));
