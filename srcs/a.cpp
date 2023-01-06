@@ -10,6 +10,12 @@
 /*																			  */
 /* ************************************************************************** */
 
+// PARSER CORRECTEMENT LOCATION PUIS METTRE TOUS DANS LES STRUCTURES PUIS AJOUTER
+// L'ERREUR SI LOCATION FAIT PAS PARTIT DE LA LOCATION PRECEDENT ET ENFIN, GERER 
+// LES DOUBLONS
+// location "/b" is outside location "/a" in /etc/nginx/nginx.conf:29
+// "client_max_body_size" directive is duplicate in /etc/nginx/nginx.conf:28
+
 #include <iostream>
 #include <fstream>
 #include <sstream>
@@ -149,8 +155,8 @@ int	extract_tokens(std::ifstream &ifs, std::vector<std::string> &tokens, std::ve
 
 	tokens.clear();
 	std::getline(ifs, line);
-	l += 1;
 	iss = std::istringstream(line);
+	l += 1;
 	// Split the line into tokens (std::istringstream::operator>> use ' ', '\t' and '\n' as delimiters)
 	while (iss >> token)
 	{
@@ -557,7 +563,7 @@ static std::string	resolve_symbolic_link(std::string path)
 		return (path.substr(0, path.rfind('/') + 1) + link_target);
 }
 
-static std::string	normalize_path(const std::string &directive, const size_t l, std::string path, std::set<std::string> link_components = std::set<std::string>())
+static std::string	normalize_path(const std::string &directive, const size_t l, std::string path, bool absolute_path, bool symbolic_link_resolution, std::set<std::string> link_components = std::set<std::string>())
 {
 	std::vector<std::string>	components;
 	std::vector<std::string>	normalized_components;
@@ -584,25 +590,39 @@ static std::string	normalize_path(const std::string &directive, const size_t l, 
 			continue ;
 		else if (*it == "..")
 		{
-			// Remove the previous component
-			if (!(normalized_components.empty()))
-				normalized_components.pop_back();
+			if (absolute_path)
+			{
+				// Remove the previous component
+				if (!(normalized_components.empty()))
+					normalized_components.pop_back();
+			}
+			else
+			{
+				// Remove the previous component
+				if (!(normalized_components.empty()) && normalized_components.back() != "..")
+					normalized_components.pop_back();
+				else
+					normalized_components.push_back(*it);
+			}
 		}
 		else
 		{
 			normalized_components.push_back(*it);
-			// Construct the path to the file
-			path.clear();
-			for (std::vector<std::string>::const_iterator c = normalized_components.begin(); c != normalized_components.end(); c++)
-				path += '/' + *c;
-			resolved_component = resolve_symbolic_link(path);
-			if (path != resolved_component)
+			if (symbolic_link_resolution)
 			{
-				// Check if the components has already been encountered
-				if (link_components.count(path))
-					return (symbolic_link_loop_error(directive, l, path));
-				link_components.insert(path);
-				return (normalize_path(directive, l, resolved_component, link_components));
+				// Construct the path to the file
+				path.clear();
+				for (std::vector<std::string>::const_iterator c = normalized_components.begin(); c != normalized_components.end(); c++)
+					path += '/' + *c;
+				resolved_component = resolve_symbolic_link(path);
+				if (path != resolved_component)
+				{
+					// Check if the components has already been encountered
+					if (link_components.count(path))
+						return (symbolic_link_loop_error(directive, l, path));
+					link_components.insert(path);
+					return (normalize_path(directive, l, resolved_component, absolute_path, symbolic_link_resolution, link_components));
+				}
 			}
 		}
 	}
@@ -617,6 +637,7 @@ static std::string	normalize_path(const std::string &directive, const size_t l, 
 int	parse_root(const std::string &directive, const std::vector<std::string> &args, const size_t l)
 {
 	// Construct path
+	std::string			root;
 	std::string			path;
 	const char			*login = getlogin();
 	const std::string	username = !(geteuid()) ? "root" : !(login) ? "root" : login;
@@ -628,7 +649,7 @@ int	parse_root(const std::string &directive, const std::vector<std::string> &arg
 		path = working_directory + '/' + args[0];
 
 	// Normalize path
-	std::string	root = normalize_path(directive, l, path);
+	root = normalize_path(directive, l, path, true, true);
 	if (root.empty())
 		return (-1);
 	if (root.size() >= PATH_MAX)
@@ -670,12 +691,12 @@ int	parse_index(const std::string &directive, const std::vector<std::string> &ar
 	for (std::vector<std::string>::const_iterator it = args.begin(); it != args.end(); it++)
 	{
 		// Normalize page
-		page = normalize_path(directive, l, *it);
+		page = normalize_path(directive, l, *it, false, true);
 		if (page.empty())
 			return (-1);
-		// Remove the starting '/' added if not needed
-		if ((*it)[0] != '/' && page[0] == '/')
-			page = page.substr(1);
+//		// Remove the starting '/' added if not needed
+//		if ((*it)[0] != '/' && page[0] == '/')
+//			page = page.substr(1);
 		if (page.size() >= PATH_MAX)
 			return (too_long_path_after_resolution_error(directive, l, page.substr(0, 10) + "..."));
 		if (!(page.empty()) && std::find(pages.begin(), pages.end(), page) == pages.end())
@@ -686,6 +707,37 @@ int	parse_index(const std::string &directive, const std::vector<std::string> &ar
 	for (std::vector<std::string>::const_iterator it = pages.begin(); it != pages.end(); it++)
 		std::cout << *it << " ";
 	std::cout << std::endl;
+	return (0);
+}
+
+////////////////////////////////////////////////////////////////////////////////
+
+int	parse_cgi(const std::string &directive, const std::vector<std::string> &args, const size_t l)
+{
+	const std::set<std::string>	extensions(args.begin(), args.end() - 1);
+	std::string					cgi;
+
+	for (std::set<std::string>::const_iterator it = extensions.begin(); it != extensions.end(); it++)
+	{
+		// Check extensions validity
+		if ((*it)[0] != '.' || (*it).find('.', 1) != std::string::npos)
+				return (invalid_value_error(directive, l, *it));
+	}
+
+	// Normalize path
+	cgi = normalize_path(directive, l, std::string(args[args.size() - 1]), false, true);
+	if (cgi.empty())
+		return (-1);
+//	// Remove the starting '/' added if not needed
+//	if (args[args.size() - 1][0] != '/' && cgi[0] == '/')
+//		cgi = cgi.substr(1);
+	if (cgi.size() >= PATH_MAX)
+		return (too_long_path_after_resolution_error(directive, l, cgi.substr(0, 10) + "..."));
+
+	std::cout << "-->";
+	for (std::set<std::string>::const_iterator it = extensions.begin(); it != extensions.end(); it++)
+		std::cout << *it << " ";
+	std::cout << "<--> " << cgi << std::endl;
 	return (0);
 }
 
@@ -734,7 +786,7 @@ int	parse_configuration_file(std::ifstream &ifs)
 
 				if (parse_context(ifs, directive, args, contexts.top(), SERVER | LOCATION, tokens, token, l) < 0)
 					return (-1);
-				if (args.size() != 0)
+				if (args.size() != 1)
 					return (invalid_number_of_arguments_error(directive, l));
 				contexts.push(LOCATION);
 			}
@@ -851,8 +903,17 @@ int	parse_configuration_file(std::ifstream &ifs)
 				if (parse_index(directive, args, l) < 0)
 					return (-1);
 			}
-			else if (*token == "fastcgi_pass") {
-				// Handle fastcgi_pass directive
+			else if (*token == "cgi")
+			{
+				std::string					directive;
+				std::vector<std::string>	args;
+
+				if (parse_directive(ifs, directive, args, contexts.top(), HTTP | SERVER | LOCATION, tokens, token, l) < 0)
+					return (-1);
+				if (args.size() < 2)
+					return (invalid_number_of_arguments_error(directive, l));
+				if (parse_cgi(directive, args, l) < 0)
+					return (-1);
 			}
 			else
 				return (unknown_directive_error(*token, l));
