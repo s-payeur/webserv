@@ -10,11 +10,15 @@
 /*																			  */
 /* ************************************************************************** */
 
-// PARSER CORRECTEMENT LOCATION PUIS METTRE TOUS DANS LES STRUCTURES PUIS AJOUTER
-// L'ERREUR SI LOCATION FAIT PAS PARTIT DE LA LOCATION PRECEDENT ET ENFIN, GERER 
-// LES DOUBLONS
+// - PARSER CORRECTEMENT LOCATION --> DONE
+// - METTRE DANS LES STRUCTURES --> TO-DO
+// - AJOUTER L'ERREUR SI LOCATION FAIT PAS PARTIE DE LA LOCATION PRECEDENT --> TO-DO
 // location "/b" is outside location "/a" in /etc/nginx/nginx.conf:29
+// - GERER LES DOUBLONS --> TO-DO
 // "client_max_body_size" directive is duplicate in /etc/nginx/nginx.conf:28
+
+// VERIFIER SI LOCATION ACCEPTE ./ ../
+// VERIFIER SI LOCATION RENVOIE UNE ERREUR SI LE CHEMIN NE COMMENCE PAS PAR '/'
 
 #include <iostream>
 #include <fstream>
@@ -24,9 +28,10 @@
 #include <stack>
 #include <vector>
 #include <set>
+#include <algorithm>
 #include <functional>
-#include <limits.h>	// PATH_MAX (root)
-#include <unistd.h>	// readlink (root)
+#include <limits.h>	// PATH_MAX (directive, root. index, cgi)
+#include <unistd.h>	// readlink (root, index, cgi)
 #include <netdb.h>		// getaddrinfo (listen)
 #include <arpa/inet.h>	// inet_ntop (listen)
 
@@ -275,6 +280,113 @@ int	parse_context(std::ifstream &ifs, std::string &directive, std::vector<std::s
 }
 
 ////////////////////////////////////////////////////////////////////////////////
+// LOCATION, ROOT, INDEX, CGI
+
+static std::string	resolve_symbolic_link(std::string path)
+{
+	char		buffer[PATH_MAX];
+	std::string	link_target;
+
+	std::memset(buffer, 0, sizeof(char) * PATH_MAX);
+	link_target = readlink(path.c_str(), buffer, PATH_MAX) < 0 ? std::string() : std::string(buffer);
+	if (link_target.empty())
+		return (path);
+	if (link_target[0] == '/')
+		return (link_target);
+	else
+		return (path.substr(0, path.rfind('/') + 1) + link_target);
+}
+
+static std::string	normalize_path(const std::string &directive, const size_t l, std::string path, bool absolute_path, bool symbolic_link_resolution, std::set<std::string> link_components = std::set<std::string>())
+{
+	std::vector<std::string>	components;
+	std::vector<std::string>	normalized_components;
+	std::string					resolved_component;
+	std::string::size_type		start;
+	std::string::size_type		end;
+
+	// Split path into multiple components using '/' as delimiter
+	start = 0;
+	end = path.find('/');
+	while (end != std::string::npos)
+	{
+		if (start != end)
+			components.push_back(path.substr(start, end - start));
+		start = end + 1;
+		end = path.find('/', start);
+	}
+	if (start < path.size() && start != end)
+		components.push_back(path.substr(start));
+
+	for (std::vector<std::string>::iterator it = components.begin(); it != components.end(); it++)
+	{
+		if (*it == ".")
+			continue ;
+		else if (*it == "..")
+		{
+			if (absolute_path)
+			{
+				// Remove the previous component
+				if (!(normalized_components.empty()))
+					normalized_components.pop_back();
+			}
+			else
+			{
+				// Remove the previous component
+				if (!(normalized_components.empty()) && normalized_components.back() != "..")
+					normalized_components.pop_back();
+				else
+					normalized_components.push_back(*it);
+			}
+		}
+		else
+		{
+			normalized_components.push_back(*it);
+			if (symbolic_link_resolution)
+			{
+				// Construct the path to the file
+				path.clear();
+				for (std::vector<std::string>::const_iterator c = normalized_components.begin(); c != normalized_components.end(); c++)
+					path += '/' + *c;
+				resolved_component = resolve_symbolic_link(path);
+				if (path != resolved_component)
+				{
+					// Check if the components has already been encountered
+					if (link_components.count(path))
+						return (symbolic_link_loop_error(directive, l, path));
+					link_components.insert(path);
+					return (normalize_path(directive, l, resolved_component, absolute_path, symbolic_link_resolution, link_components));
+				}
+			}
+		}
+	}
+
+	// Construct the path
+	path.clear();
+	for (std::vector<std::string>::const_iterator it = normalized_components.begin(); it != normalized_components.end(); it++)
+		path += '/' + *it;
+	return (path.empty() ? "/" : path);
+}
+
+////////////////////////////////////////////////////////////////////////////////
+
+int	parse_location(const std::string &directive, const std::vector<std::string> &args, const size_t l)
+{
+	// Construct path
+	std::string			location;
+
+	// Normalize path
+	location = normalize_path(directive, l, std::string(args[0]), true, false);
+	if (location.empty())
+		return (-1);
+	if (location.size() >= PATH_MAX)
+		return (too_long_path_after_resolution_error(directive, l, location.substr(0, 10) + "..."));
+
+	std::cout << "-->" << location << std::endl;
+	return (0);
+}
+
+////////////////////////////////////////////////////////////////////////////////
 
 static std::string	resolve_hostname(const std::string &directive, const size_t l, const std::string &host_port, const std::string &hostname)
 {
@@ -292,7 +404,10 @@ static std::string	resolve_hostname(const std::string &directive, const size_t l
 
 	// Extract the IP address from the result
 	if (!(inet_ntop(AF_INET, &(reinterpret_cast<struct sockaddr_in*>(result->ai_addr)->sin_addr), ip, INET_ADDRSTRLEN)))
+	{
+		freeaddrinfo(result);
 		return (host_not_found_error(directive, l, host_port));
+	}
 
 	// Free the result of getaddrinfo
 	freeaddrinfo(result);
@@ -548,92 +663,6 @@ int	parse_return(const std::string &directive, const std::vector<std::string> &a
 
 ////////////////////////////////////////////////////////////////////////////////
 
-static std::string	resolve_symbolic_link(std::string path)
-{
-	char		buffer[PATH_MAX];
-	std::string	link_target;
-
-	std::memset(buffer, 0, sizeof(char) * PATH_MAX);
-	link_target = readlink(path.c_str(), buffer, PATH_MAX) < 0 ? std::string() : std::string(buffer);
-	if (link_target.empty())
-		return (path);
-	if (link_target[0] == '/')
-		return (link_target);
-	else
-		return (path.substr(0, path.rfind('/') + 1) + link_target);
-}
-
-static std::string	normalize_path(const std::string &directive, const size_t l, std::string path, bool absolute_path, bool symbolic_link_resolution, std::set<std::string> link_components = std::set<std::string>())
-{
-	std::vector<std::string>	components;
-	std::vector<std::string>	normalized_components;
-	std::string					resolved_component;
-	std::string::size_type		start;
-	std::string::size_type		end;
-
-	// Split path into multiple components using '/' as delimiter
-	start = 0;
-	end = path.find('/');
-	while (end != std::string::npos)
-	{
-		if (start != end)
-			components.push_back(path.substr(start, end - start));
-		start = end + 1;
-		end = path.find('/', start);
-	}
-	if (start < path.size() && start != end)
-		components.push_back(path.substr(start));
-
-	for (std::vector<std::string>::iterator it = components.begin(); it != components.end(); it++)
-	{
-		if (*it == ".")
-			continue ;
-		else if (*it == "..")
-		{
-			if (absolute_path)
-			{
-				// Remove the previous component
-				if (!(normalized_components.empty()))
-					normalized_components.pop_back();
-			}
-			else
-			{
-				// Remove the previous component
-				if (!(normalized_components.empty()) && normalized_components.back() != "..")
-					normalized_components.pop_back();
-				else
-					normalized_components.push_back(*it);
-			}
-		}
-		else
-		{
-			normalized_components.push_back(*it);
-			if (symbolic_link_resolution)
-			{
-				// Construct the path to the file
-				path.clear();
-				for (std::vector<std::string>::const_iterator c = normalized_components.begin(); c != normalized_components.end(); c++)
-					path += '/' + *c;
-				resolved_component = resolve_symbolic_link(path);
-				if (path != resolved_component)
-				{
-					// Check if the components has already been encountered
-					if (link_components.count(path))
-						return (symbolic_link_loop_error(directive, l, path));
-					link_components.insert(path);
-					return (normalize_path(directive, l, resolved_component, absolute_path, symbolic_link_resolution, link_components));
-				}
-			}
-		}
-	}
-
-	// Construct the path
-	path.clear();
-	for (std::vector<std::string>::const_iterator it = normalized_components.begin(); it != normalized_components.end(); it++)
-		path += '/' + *it;
-	return (path.empty() ? "/" : path);
-}
-
 int	parse_root(const std::string &directive, const std::vector<std::string> &args, const size_t l)
 {
 	// Construct path
@@ -641,7 +670,7 @@ int	parse_root(const std::string &directive, const std::vector<std::string> &arg
 	std::string			path;
 	const char			*login = getlogin();
 	const std::string	username = !(geteuid()) ? "root" : !(login) ? "root" : login;
-	const std::string	working_directory = "/home/" + username + "/goinfre/webserv/html";
+	const std::string	working_directory = "/mnt/nfs/homes/" + username + "/goinfre/webserv/html";
 
 	if (args[0][0] == '/')
 		path = args[0];
@@ -788,6 +817,8 @@ int	parse_configuration_file(std::ifstream &ifs)
 					return (-1);
 				if (args.size() != 1)
 					return (invalid_number_of_arguments_error(directive, l));
+				if (parse_location(directive, args, l) < 0)
+					return (-1);
 				contexts.push(LOCATION);
 			}
 			else if (*token == "}")
