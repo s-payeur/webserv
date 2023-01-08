@@ -1,13 +1,13 @@
 /* ************************************************************************** */
-/*																			  */
-/*														  :::	   ::::::::   */
-/*	 a.c												:+:		 :+:	:+:   */
-/*													  +:+ +:+		  +:+	  */
-/*	 By: spayeur <spayeur@student.42.fr>			+#+  +:+	   +#+		  */
-/*												  +#+#+#+#+#+	+#+			  */
+/*                                                                            */
+/*                                                        :::      ::::::::   */
+/*   a.cpp                                              :+:      :+:    :+:   */
+/*                                                    +:+ +:+         +:+     */
+/*   By: spayeur <spayeur@student.42.fr>            +#+  +:+       +#+        */
+/*                                                +#+#+#+#+#+   +#+           */
 /*	 Created: 2022/12/17 10:43:15 by spayeur		   #+#	  #+#			  */
-/*	 Updated: 2022/12/17 11:03:40 by spayeur		  ###	########.fr		  */
-/*																			  */
+/*   Updated: 2023/01/09 00:04:42 by spayeur          ###   ########.fr       */
+/*                                                                            */
 /* ************************************************************************** */
 
 // - PARSER CORRECTEMENT LOCATION --> DONE
@@ -54,17 +54,6 @@ enum e_context {
 };
 
 ////////////////////////////////////////////////////////////////////////////////
-
-bool    is_current_context_http(const Http &http)
-{
-    return (http.server.empty());
-}
-
-bool    is_current_context_server(const Http &http)
-{
-    return (http.server.back().location.empty());
-}
-
 Http    &get_current_http_context(Http &http)
 {
     return (http);
@@ -84,8 +73,6 @@ Location    &get_current_location_context(Http &http)
         location = &((*location).location.back());
     return (*location);
 }
-
-
 ////////////////////////////////////////////////////////////////////////////////
 
 template <typename T1, typename T2 = const char[], typename T3 = const char[], typename T4 = const char[], typename T5 = const char[], typename T6 = const char[], typename T7 = const char[], typename T8 = const char[], typename T9 = const char[], typename T10 = const char[], typename T11 = const char[], typename T12 = const char[], typename T13 = const char[], typename T14 = const char[]>
@@ -271,6 +258,24 @@ int	extract_tokens(std::ifstream &ifs, std::vector<std::string> &tokens, std::ve
 
 ////////////////////////////////////////////////////////////////////////////////
 
+bool	is_current_context_http(const Http &http)
+{
+	return (http.server.empty());
+}
+
+bool	is_current_context_server(const Http &http)
+{
+	return (http.server.back().location.empty());
+}
+
+template <class T>
+T	&get_context(std::stack<std::pair<e_context, void *>> &contexts)
+{
+	return (*(reinterpret_cast<T *>(contexts.top().second)));
+}
+
+////////////////////////////////////////////////////////////////////////////////
+
 static int	get_context_arguments(const std::string &directive, std::vector<std::string> &args, const std::vector<std::string> &tokens, std::vector<std::string>::const_iterator &token, const size_t l)
 {
 	// Get context arguments
@@ -439,7 +444,7 @@ void	parse_http(std::stack<std::pair<e_context, void *>> &contexts, Http &http)
 
 void	parse_server(std::stack<std::pair<e_context, void *>> &contexts)
 {
-	Http	&http = (*(reinterpret_cast<Http *>(contexts.top().second)));
+	Http	&http = get_context<Http>(contexts);
 
 	http.server.push_back(Server(http));
 	contexts.push(std::pair<e_context, void *>(SERVER, &(http.server.back())));
@@ -460,7 +465,7 @@ int	parse_location(std::stack<std::pair<e_context, void *>> &contexts, const std
 
 	if (contexts.top().first == SERVER)
 	{
-		Server	&server = (*(reinterpret_cast<Server *>(contexts.top().second)));
+		Server	&server = get_context<Server>(contexts);
 
 		for (std::vector<Location>::const_iterator it = server.location.begin(); it != server.location.end(); it++)
 		{
@@ -472,7 +477,7 @@ int	parse_location(std::stack<std::pair<e_context, void *>> &contexts, const std
 	}
 	else
 	{
-		Location	&location = (*(reinterpret_cast<Location *>(contexts.top().second)));
+		Location	&location = get_context<Location>(contexts);
 
 		if ((uri != location.uri) && (uri.find(location.uri) != 0 \
 		|| uri.size() <= location.uri.size() || uri[location.uri.size()] != '/'))
@@ -674,9 +679,9 @@ int	parse_client_max_body_size(Http &http, const std::string &directive, const s
 
 	// Check value validity
 	if (value.empty() || suffix.size() > 1 || (suffix.size() == 1 \
-	&&  suffix != "k" && suffix != "K" \
-	&&  suffix != "m" && suffix != "M" \
-	&&  suffix != "g" && suffix != "G"))
+	&&	suffix != "k" && suffix != "K" \
+	&&	suffix != "m" && suffix != "M" \
+	&&	suffix != "g" && suffix != "G"))
 		return (invalid_value_error(directive, l, args[0]));
 
 	// Set limit depending on suffix
@@ -725,8 +730,8 @@ int	parse_limit_except(Http &http, const std::string &directive, const std::vect
 	{
 		// Check method validity
 		if (*it != "GET" \
-		&&  *it != "POST" \
-		&&  *it != "DELETE")
+		&&	*it != "POST" \
+		&&	*it != "DELETE")
 			return (invalid_method_error(directive, l, *it));
 		if (!((*it).empty()) && std::find(http_methods.begin(), http_methods.end(), *it) == http_methods.end())
 			http_methods.push_back(*it);
