@@ -13,13 +13,22 @@
 // - PARSER CORRECTEMENT LOCATION --> DONE
 // - METTRE DANS LES STRUCTURES --> ~DONE ?
 // - AJOUTER L'ERREUR SI LOCATION FAIT PAS PARTIE DE LA LOCATION PRECEDENT --> TO-DO
-// location "/b" is outside location "/a" in /etc/nginx/nginx.conf:29
+// location "/b" is outside location "/a" in /etc/nginx/nginx.conf:xx
 // - GERER LES DOUBLONS --> TO-DO
-// "client_max_body_size" directive is duplicate in /etc/nginx/nginx.conf:28
+// "client_max_body_size" directive is duplicate in /etc/nginx/nginx.conf:xx
+// - CORRIGER LE PARSING DANS LE CAS OU UNE DIRECTIVE SE TROUVE APRES UN CONTEXT
+// -> Pour ce faire, la structures des classes http, server et location du commit (b12d4a7)
+// et à la fin d'un context, lancer un post-parsing qui définie pour toutes les valeurs
+// définie manuellement du bloc en question (d'après le flag) les mêmes valeurs pour 
+// tous les blocs enfant donc les valeurs en question ne sont pas définies (d'après le flag).
+
 
 // VERIFIER SI LOCATION ACCEPTE ./ ../
+// => Oui, avec absolute:true et symbolic_link_resolution:true
 // VERIFIER SI LOCATION RENVOIE UNE ERREUR SI LE CHEMIN NE COMMENCE PAS PAR '/'
+// => Non, autorisé avec le comportement ci-dessus.
 // VERIFIER LE COMPORTEMENT AVEC PLUSIEURS LOCATION DESIGNANT LE MEME CHEMIN
+// duplicate location "/" in /etc/nginx/nginx.conf:xx
 
 #include <iostream>
 #include <fstream>
@@ -96,6 +105,11 @@ int	invalid_value_error(const std::string &directive, const size_t l, const std:
 int	value_must_be_between_error(const std::string &directive, const size_t l, const std::string &value, const long long min, const long long max, const std::string &unit)
 {
 	return (parsing_error("value '", value, unit, "' must be between ", min, unit, " and ", max, unit, " in '", directive, "' directive (line ", l, ")"));
+}
+
+int	location_is_outside_location_error(const std::string &directive, const size_t l, const std::string &location1, const std::string &location2)
+{
+	return (parsing_error("location '", location1, "' is outside location '", location2, "' in '", directive, "' directive (line ", l, ")"));
 }
 
 int	invalid_host_error(const std::string &directive, const size_t l, const std::string &value)
@@ -408,20 +422,30 @@ static std::string	normalize_path(const std::string &directive, const size_t l, 
 
 int	parse_location(Http &http, const std::string &directive, const std::vector<std::string> &args, const size_t l)
 {
-	std::string	location_path;
+	std::string	uri;
 
 	// Normalize path
-	location_path = normalize_path(directive, l, std::string(args[0]), true, false);
-	if (location_path.empty())
+	uri = normalize_path(directive, l, std::string(args[0]), true, true);
+	if (uri.empty())
 		return (-1);
-	if (location_path.size() >= PATH_MAX)
-		return (too_long_path_after_resolution_error(directive, l, location_path.substr(0, 10) + "..."));
+	if (uri.size() >= PATH_MAX)
+		return (too_long_path_after_resolution_error(directive, l, uri.substr(0, 10) + "..."));
+
 
 	if (is_current_context_server(http))
-		get_current_server_context(http).location_path.push_back(location_path);
+	{
+		get_current_server_context(http).location.push_back(Location(get_current_server_context(http), uri));
+	}
 	else
-		get_current_location_context(http).location_path.push_back(location_path);
-//	std::cout << "-->" << location_path << std::endl;
+	{
+		Location	&current_location = get_current_location_context(http);
+
+		if (uri.find(current_location.uri) != 0)
+			return (location_is_outside_location_error(directive, l, uri, current_location.uri));
+
+		current_location.location.push_back(Location(current_location, uri));
+	}
+//	std::cout << "-->" << uri << std::endl;
 	return (0);
 }
 
@@ -960,11 +984,6 @@ int	parse_configuration_file(Http &http, std::ifstream &ifs)
 					return (invalid_number_of_arguments_error(directive, l));
 				if (parse_location(http, directive, args, l) < 0)
 					return (-1);
-
-				if (is_current_context_server(http))
-					get_current_server_context(http).location.push_back(Location(get_current_server_context(http)));
-				else
-					get_current_location_context(http).location.push_back(Location(get_current_location_context(http)));
 
 				contexts.push(LOCATION);
 			}

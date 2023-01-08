@@ -6,7 +6,7 @@
 /*   By: spayeur <spayeur@student.42.fr>            +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2022/12/12 03:13:21 by spayeur           #+#    #+#             */
-/*   Updated: 2023/01/06 17:25:17 by spayeur          ###   ########.fr       */
+/*   Updated: 2023/01/08 08:10:45 by spayeur          ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -26,7 +26,6 @@ Server::Server(const Http &http)
 	error_page = http.error_page;
 	client_max_body_size = http.client_max_body_size;
 	location = std::vector<Location>();
-	location_path = std::vector<std::string>();
 	limit_except = http.limit_except;
 	return_ = std::pair<int, std::string>(0, std::string());
 	root = http.root;
