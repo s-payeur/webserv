@@ -271,40 +271,6 @@ int	extract_tokens(std::ifstream &ifs, std::vector<std::string> &tokens, std::ve
 
 ////////////////////////////////////////////////////////////////////////////////
 
-static int	get_directive_arguments(const std::string &directive, std::vector<std::string> &args, const std::vector<std::string> &tokens, std::vector<std::string>::const_iterator &token, const size_t l)
-{
-	// Get directive arguments
-	while (token != tokens.end() && *token != ";")
-	{
-		if (*token == "{" || *token == "}")
-			return (unexpected_character_error((*token)[0], l));
-		// Check argument size
-		if ((*token).size() >= PATH_MAX)
-			return (too_long_argument_error(directive, l, (*token).substr(0, 10) + "..."));
-		args.push_back(*token);
-		token++;
-	}
-	return (0);
-}
-
-int	parse_directive(std::ifstream &ifs, std::string &directive, std::vector<std::string> &args, std::pair<e_context, void *> context, size_t allowed_contexts, std::vector<std::string> &tokens, std::vector<std::string>::const_iterator &token, size_t l)
-{
-	directive = *token++;
-	// Check context validity
-	if (!(context.first & allowed_contexts))
-		return (directive_not_allowed_here_error(directive, l));
-	if (get_directive_arguments(directive, args, tokens, token, l) < 0)
-		return (-1);
-	while (token == tokens.end())
-	{
-		if (extract_tokens(ifs, tokens, token, l) < 0)
-			return (unexpected_end_of_file_error(l));
-		if (get_directive_arguments(directive, args, tokens, token, l) < 0)
-			return (-1);
-	}
-	return (0);
-}
-
 static int	get_context_arguments(const std::string &directive, std::vector<std::string> &args, const std::vector<std::string> &tokens, std::vector<std::string>::const_iterator &token, const size_t l)
 {
 	// Get context arguments
@@ -321,11 +287,11 @@ static int	get_context_arguments(const std::string &directive, std::vector<std::
 	return (0);
 }
 
-int	parse_context(std::ifstream &ifs, std::string &directive, std::vector<std::string> &args, std::pair<e_context, void *> context, size_t allowed_contexts, std::vector<std::string> &tokens, std::vector<std::string>::const_iterator &token, size_t l)
+int	parse_context(std::ifstream &ifs, std::string &directive, std::vector<std::string> &args, e_context context, size_t allowed_contexts, std::vector<std::string> &tokens, std::vector<std::string>::const_iterator &token, size_t l)
 {
 	directive = *token++;
 	// Check context validity
-	if (!(context.first & allowed_contexts))
+	if (!(context & allowed_contexts))
 		return (directive_not_allowed_here_error(directive, l));
 	if (get_context_arguments(directive, args, tokens, token, l) < 0)
 		return (-1);
@@ -334,6 +300,40 @@ int	parse_context(std::ifstream &ifs, std::string &directive, std::vector<std::s
 		if (extract_tokens(ifs, tokens, token, l) < 0)
 			return (unexpected_end_of_file_error(l));
 		if (get_context_arguments(directive, args, tokens, token, l) < 0)
+			return (-1);
+	}
+	return (0);
+}
+
+static int	get_directive_arguments(const std::string &directive, std::vector<std::string> &args, const std::vector<std::string> &tokens, std::vector<std::string>::const_iterator &token, const size_t l)
+{
+	// Get directive arguments
+	while (token != tokens.end() && *token != ";")
+	{
+		if (*token == "{" || *token == "}")
+			return (unexpected_character_error((*token)[0], l));
+		// Check argument size
+		if ((*token).size() >= PATH_MAX)
+			return (too_long_argument_error(directive, l, (*token).substr(0, 10) + "..."));
+		args.push_back(*token);
+		token++;
+	}
+	return (0);
+}
+
+int	parse_directive(std::ifstream &ifs, std::string &directive, std::vector<std::string> &args, e_context context, size_t allowed_contexts, std::vector<std::string> &tokens, std::vector<std::string>::const_iterator &token, size_t l)
+{
+	directive = *token++;
+	// Check context validity
+	if (!(context & allowed_contexts))
+		return (directive_not_allowed_here_error(directive, l));
+	if (get_directive_arguments(directive, args, tokens, token, l) < 0)
+		return (-1);
+	while (token == tokens.end())
+	{
+		if (extract_tokens(ifs, tokens, token, l) < 0)
+			return (unexpected_end_of_file_error(l));
+		if (get_directive_arguments(directive, args, tokens, token, l) < 0)
 			return (-1);
 	}
 	return (0);
@@ -994,7 +994,7 @@ int	parse_configuration_file(Http &http, std::ifstream &ifs)
 				std::string					directive;
 				std::vector<std::string>	args;
 
-				if (parse_context(ifs, directive, args, contexts.top(), MAIN, tokens, token, l) < 0)
+				if (parse_context(ifs, directive, args, contexts.top().first, MAIN, tokens, token, l) < 0)
 					return (-1);
 				if (args.size() != 0)
 					return (invalid_number_of_arguments_error(directive, l));
@@ -1005,7 +1005,7 @@ int	parse_configuration_file(Http &http, std::ifstream &ifs)
 				std::string					directive;
 				std::vector<std::string>	args;
 
-				if (parse_context(ifs, directive, args, contexts.top(), HTTP, tokens, token, l) < 0)
+				if (parse_context(ifs, directive, args, contexts.top().first, HTTP, tokens, token, l) < 0)
 					return (-1);
 				if (args.size() != 0)
 					return (invalid_number_of_arguments_error(directive, l));
@@ -1016,7 +1016,7 @@ int	parse_configuration_file(Http &http, std::ifstream &ifs)
 				std::string					directive;
 				std::vector<std::string>	args;
 
-				if (parse_context(ifs, directive, args, contexts.top(), SERVER | LOCATION, tokens, token, l) < 0)
+				if (parse_context(ifs, directive, args, contexts.top().first, SERVER | LOCATION, tokens, token, l) < 0)
 					return (-1);
 				if (args.size() != 1)
 					return (invalid_number_of_arguments_error(directive, l));
@@ -1032,7 +1032,7 @@ int	parse_configuration_file(Http &http, std::ifstream &ifs)
 				std::string					directive;
 				std::vector<std::string>	args;
 
-				if (parse_directive(ifs, directive, args, contexts.top(), SERVER, tokens, token, l) < 0)
+				if (parse_directive(ifs, directive, args, contexts.top().first, SERVER, tokens, token, l) < 0)
 					return (-1);
 				if (args.size() != 1)
 					return (invalid_number_of_arguments_error(directive, l));
@@ -1044,7 +1044,7 @@ int	parse_configuration_file(Http &http, std::ifstream &ifs)
 				std::string					directive;
 				std::vector<std::string>	args;
 
-				if (parse_directive(ifs, directive, args, contexts.top(), SERVER, tokens, token, l) < 0)
+				if (parse_directive(ifs, directive, args, contexts.top().first, SERVER, tokens, token, l) < 0)
 					return (-1);
 				if (args.size() != 1)
 					return (invalid_number_of_arguments_error(directive, l));
@@ -1056,7 +1056,7 @@ int	parse_configuration_file(Http &http, std::ifstream &ifs)
 				std::string					directive;
 				std::vector<std::string>	args;
 
-				if (parse_directive(ifs, directive, args, contexts.top(), HTTP | SERVER | LOCATION, tokens, token, l) < 0)
+				if (parse_directive(ifs, directive, args, contexts.top().first, HTTP | SERVER | LOCATION, tokens, token, l) < 0)
 					return (-1);
 				if (args.size() < 2)
 					return (invalid_number_of_arguments_error(directive, l));
@@ -1068,7 +1068,7 @@ int	parse_configuration_file(Http &http, std::ifstream &ifs)
 				std::string					directive;
 				std::vector<std::string>	args;
 
-				if (parse_directive(ifs, directive, args, contexts.top(), HTTP | SERVER | LOCATION, tokens, token, l) < 0)
+				if (parse_directive(ifs, directive, args, contexts.top().first, HTTP | SERVER | LOCATION, tokens, token, l) < 0)
 					return (-1);
 				if (args.size() != 1)
 					return (invalid_number_of_arguments_error(directive, l));
@@ -1081,7 +1081,7 @@ int	parse_configuration_file(Http &http, std::ifstream &ifs)
 				std::vector<std::string>	args;
 
 				// Normally allowed only in LOCATION but allowed in HTTP and SERVER to respect the subject's requirements
-				if (parse_directive(ifs, directive, args, contexts.top(), HTTP | SERVER | LOCATION, tokens, token, l) < 0)
+				if (parse_directive(ifs, directive, args, contexts.top().first, HTTP | SERVER | LOCATION, tokens, token, l) < 0)
 					return (-1);
 				if (args.size() < 1)
 					return (invalid_number_of_arguments_error(directive, l));
@@ -1093,7 +1093,7 @@ int	parse_configuration_file(Http &http, std::ifstream &ifs)
 				std::string					directive;
 				std::vector<std::string>	args;
 
-				if (parse_directive(ifs, directive, args, contexts.top(), SERVER | LOCATION, tokens, token, l) < 0)
+				if (parse_directive(ifs, directive, args, contexts.top().first, SERVER | LOCATION, tokens, token, l) < 0)
 					return (-1);
 				if (args.size() < 1 || 2 < args.size())
 					return (invalid_number_of_arguments_error(directive, l));
@@ -1105,7 +1105,7 @@ int	parse_configuration_file(Http &http, std::ifstream &ifs)
 				std::string					directive;
 				std::vector<std::string>	args;
 
-				if (parse_directive(ifs, directive, args, contexts.top(), HTTP | SERVER | LOCATION, tokens, token, l) < 0)
+				if (parse_directive(ifs, directive, args, contexts.top().first, HTTP | SERVER | LOCATION, tokens, token, l) < 0)
 					return (-1);
 				if (args.size() != 1)
 					return (invalid_number_of_arguments_error(directive, l));
@@ -1117,7 +1117,7 @@ int	parse_configuration_file(Http &http, std::ifstream &ifs)
 				std::string					directive;
 				std::vector<std::string>	args;
 
-				if (parse_directive(ifs, directive, args, contexts.top(), HTTP | SERVER | LOCATION, tokens, token, l) < 0)
+				if (parse_directive(ifs, directive, args, contexts.top().first, HTTP | SERVER | LOCATION, tokens, token, l) < 0)
 					return (-1);
 				if (args.size() != 1)
 					return (invalid_number_of_arguments_error(directive, l));
@@ -1129,7 +1129,7 @@ int	parse_configuration_file(Http &http, std::ifstream &ifs)
 				std::string					directive;
 				std::vector<std::string>	args;
 
-				if (parse_directive(ifs, directive, args, contexts.top(), HTTP | SERVER | LOCATION, tokens, token, l) < 0)
+				if (parse_directive(ifs, directive, args, contexts.top().first, HTTP | SERVER | LOCATION, tokens, token, l) < 0)
 					return (-1);
 				if (args.size() < 1)
 					return (invalid_number_of_arguments_error(directive, l));
@@ -1141,7 +1141,7 @@ int	parse_configuration_file(Http &http, std::ifstream &ifs)
 				std::string					directive;
 				std::vector<std::string>	args;
 
-				if (parse_directive(ifs, directive, args, contexts.top(), LOCATION, tokens, token, l) < 0)
+				if (parse_directive(ifs, directive, args, contexts.top().first, LOCATION, tokens, token, l) < 0)
 					return (-1);
 				if (args.size() < 2)
 					return (invalid_number_of_arguments_error(directive, l));
