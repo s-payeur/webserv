@@ -6,7 +6,7 @@
 /*   By: spayeur <spayeur@student.42.fr>            +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*	 Created: 2022/12/17 10:43:15 by spayeur		   #+#	  #+#			  */
-/*   Updated: 2023/01/09 00:04:42 by spayeur          ###   ########.fr       */
+/*   Updated: 2023/01/09 00:16:53 by spayeur          ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -523,7 +523,7 @@ static std::string	resolve_hostname(const std::string &directive, const size_t l
 	return (std::string(ip));
 }
 
-int	parse_listen(Http &http, const std::string &directive, const std::vector<std::string> &args, const size_t l)
+int	parse_listen(std::stack<std::pair<e_context, void*>> &contexts, const std::string &directive, const std::vector<std::string> &args, const size_t l)
 {
 	std::string					host;
 	std::string					port;
@@ -612,25 +612,25 @@ int	parse_listen(Http &http, const std::string &directive, const std::vector<std
 	if (port.size() > 5 || (port.size() == 5 && port.compare("65535") > 0))
 		return (port_must_be_between_error(directive, l, port, 0, 65535));
 
-	get_current_server_context(http).listen = std::pair<std::string, std::string>(host, port);
+	get_context<Server>(contexts).listen = std::pair<std::string, std::string>(host, port);
 //	std::cout << "-->" << host << ":" << port << std::endl;
 	return (0);
 }
 
 ////////////////////////////////////////////////////////////////////////////////
 
-int	parse_server_name(Http &http, const std::string &directive, const std::vector<std::string> &args, const size_t l)
+int	parse_server_name(std::stack<std::pair<e_context, void*>> &contexts, const std::string &directive, const std::vector<std::string> &args, const size_t l)
 {
 	const std::string	server_name(args[0]);
 
-	get_current_server_context(http).server_name = server_name;
+	get_context<Server>(contexts).server_name = server_name;
 //	std::cout << "-->" << server_name << std::endl;;
 	return (0);
 }
 
 ////////////////////////////////////////////////////////////////////////////////
 
-int	parse_error_page(Http &http, const std::string &directive, const std::vector<std::string> &args, const size_t l)
+int	parse_error_page(std::stack<std::pair<e_context, void*>> &contexts, const std::string &directive, const std::vector<std::string> &args, const size_t l)
 {
 	const std::set<std::string>	codes(args.begin(), args.end() - 1);
 	const std::string			page = args[args.size() - 1];
@@ -647,12 +647,12 @@ int	parse_error_page(Http &http, const std::string &directive, const std::vector
 		error_page.insert(std::pair<int, std::string>(std::stoi(*it), page));
 	}
 
-	if (is_current_context_http(http))
-		get_current_http_context(http).error_page.insert(error_page.begin(), error_page.end());
-	else if (is_current_context_server(http))
-		get_current_server_context(http).error_page.insert(error_page.begin(), error_page.end());
+	if (contexts.top().first == HTTP)
+		get_context<Http>(contexts).error_page.insert(error_page.begin(), error_page.end());
+	else if (contexts.top().first == SERVER)
+		get_context<Server>(contexts).error_page.insert(error_page.begin(), error_page.end());
 	else
-		get_current_location_context(http).error_page.insert(error_page.begin(), error_page.end());
+		get_context<Location>(contexts).error_page.insert(error_page.begin(), error_page.end());
 //	std::cout << "-->";
 //	for (std::set<std::string>::const_iterator it = codes.begin(); it != codes.end(); it++)
 //		std::cout << *it << " ";
@@ -662,7 +662,7 @@ int	parse_error_page(Http &http, const std::string &directive, const std::vector
 
 ////////////////////////////////////////////////////////////////////////////////
 
-int	parse_client_max_body_size(Http &http, const std::string &directive, const std::vector<std::string> &args, const size_t l)
+int	parse_client_max_body_size(std::stack<std::pair<e_context, void*>> &contexts, const std::string &directive, const std::vector<std::string> &args, const size_t l)
 {
 	std::string				value;
 	std::string				suffix;
@@ -709,19 +709,19 @@ int	parse_client_max_body_size(Http &http, const std::string &directive, const s
 	else if (suffix == "g" || suffix == "G")
 		size *= 1024 * 1024 * 1024;
 
-	if (is_current_context_http(http))
-		get_current_http_context(http).client_max_body_size = size;
-	else if (is_current_context_server(http))
-		get_current_server_context(http).client_max_body_size = size;
+	if (contexts.top().first == HTTP)
+		get_context<Http>(contexts).client_max_body_size = size;
+	else if (contexts.top().first == SERVER)
+		get_context<Server>(contexts).client_max_body_size = size;
 	else
-		get_current_location_context(http).client_max_body_size = size;
+		get_context<Location>(contexts).client_max_body_size = size;
 //	std::cout << "-->" << size << std::endl;
 	return (0);
 }
 
 ////////////////////////////////////////////////////////////////////////////////
 
-int	parse_limit_except(Http &http, const std::string &directive, const std::vector<std::string> &args, const size_t l)
+int	parse_limit_except(std::stack<std::pair<e_context, void*>> &contexts, const std::string &directive, const std::vector<std::string> &args, const size_t l)
 {
 	std::vector<std::string>	http_methods;
 
@@ -737,9 +737,9 @@ int	parse_limit_except(Http &http, const std::string &directive, const std::vect
 			http_methods.push_back(*it);
 	}
 
-	if (is_current_context_http(http))
+	if (contexts.top().first == HTTP)
 	{
-		Http	&current_http = get_current_http_context(http);
+		Http	&current_http = get_context<Http>(contexts);
 
 		for (std::vector<std::string>::const_iterator it = http_methods.begin(); it != http_methods.end(); it++)
 		{
@@ -747,9 +747,9 @@ int	parse_limit_except(Http &http, const std::string &directive, const std::vect
 				current_http.limit_except.push_back(*it);
 		}
 	}
-	else if (is_current_context_server(http))
+	else if (contexts.top().first == SERVER)
 	{
-		Server	&current_server = get_current_server_context(http);
+		Server	&current_server = get_context<Server>(contexts);
 
 		for (std::vector<std::string>::const_iterator it = http_methods.begin(); it != http_methods.end(); it++)
 		{
@@ -759,7 +759,7 @@ int	parse_limit_except(Http &http, const std::string &directive, const std::vect
 	}
 	else
 	{
-		Location	&current_location = get_current_location_context(http);
+		Location	&current_location = get_context<Location>(contexts);
 
 		for (std::vector<std::string>::const_iterator it = http_methods.begin(); it != http_methods.end(); it++)
 		{
@@ -776,7 +776,7 @@ int	parse_limit_except(Http &http, const std::string &directive, const std::vect
 
 ////////////////////////////////////////////////////////////////////////////////
 
-int	parse_return(Http &http, const std::string &directive, const std::vector<std::string> &args, const size_t l)
+int	parse_return(std::stack<std::pair<e_context, void*>> &contexts, const std::string &directive, const std::vector<std::string> &args, const size_t l)
 {
 	std::string	code;
 	std::string	text_url;
@@ -809,17 +809,17 @@ int	parse_return(Http &http, const std::string &directive, const std::vector<std
 	if (code.size() != 3 || code.compare("599") > 0)
 		return (return_code_must_be_between_error(directive, l, code, 100, 599));
 
-	if (is_current_context_server(http))
-		get_current_server_context(http).return_ = std::pair<int, std::string>(std::stoi(code), text_url);
+	if (contexts.top().first == SERVER)
+		get_context<Server>(contexts).return_ = std::pair<int, std::string>(std::stoi(code), text_url);
 	else
-		get_current_location_context(http).return_ = std::pair<int, std::string>(std::stoi(code), text_url);
+		get_context<Location>(contexts).return_ = std::pair<int, std::string>(std::stoi(code), text_url);
 //	std::cout << "-->" << code << " <--> " << text_url << std::endl;
 	return (0);
 }
 
 ////////////////////////////////////////////////////////////////////////////////
 
-int	parse_root(Http &http, const std::string &directive, const std::vector<std::string> &args, const size_t l)
+int	parse_root(std::stack<std::pair<e_context, void*>> &contexts, const std::string &directive, const std::vector<std::string> &args, const size_t l)
 {
 	// Construct path
 	std::string			root;
@@ -840,19 +840,19 @@ int	parse_root(Http &http, const std::string &directive, const std::vector<std::
 	if (root.size() >= PATH_MAX)
 		return (too_long_path_after_resolution_error(directive, l, root.substr(0, 10) + "..."));
 
-	if (is_current_context_http(http))
-		get_current_http_context(http).root = root;
-	else if (is_current_context_server(http))
-		get_current_server_context(http).root = root;
+	if (contexts.top().first == HTTP)
+		get_context<Http>(contexts).root = root;
+	else if (contexts.top().first == SERVER)
+		get_context<Server>(contexts).root = root;
 	else
-		get_current_location_context(http).root = root;
+		get_context<Location>(contexts).root = root;
 //	std::cout << "-->" << root << std::endl;
 	return (0);
 }
 
 ////////////////////////////////////////////////////////////////////////////////
 
-int	parse_autoindex(Http &http, const std::string &directive, const std::vector<std::string> &args, const size_t l)
+int	parse_autoindex(std::stack<std::pair<e_context, void*>> &contexts, const std::string &directive, const std::vector<std::string> &args, const size_t l)
 {
 	std::string	value;
 	bool		autoindex;
@@ -867,19 +867,19 @@ int	parse_autoindex(Http &http, const std::string &directive, const std::vector<
 	else
 		return (invalid_value_error(directive, l, value));
 
-	if (is_current_context_http(http))
-		get_current_http_context(http).autoindex = autoindex;
-	else if (is_current_context_server(http))
-		get_current_server_context(http).autoindex = autoindex;
+	if (contexts.top().first == HTTP)
+		get_context<Http>(contexts).autoindex = autoindex;
+	else if (contexts.top().first == SERVER)
+		get_context<Server>(contexts).autoindex = autoindex;
 	else
-		get_current_location_context(http).autoindex = autoindex;
+		get_context<Location>(contexts).autoindex = autoindex;
 //	std::cout << std::boolalpha << "-->" << autoindex << std::endl;
 	return (0);
 }
 
 ////////////////////////////////////////////////////////////////////////////////
 
-int	parse_index(Http &http, const std::string &directive, const std::vector<std::string> &args, const size_t l)
+int	parse_index(std::stack<std::pair<e_context, void*>> &contexts, const std::string &directive, const std::vector<std::string> &args, const size_t l)
 {
 	std::vector<std::string>	pages;
 	std::string					page;
@@ -897,9 +897,9 @@ int	parse_index(Http &http, const std::string &directive, const std::vector<std:
 			pages.push_back(page);
 	}
 
-	if (is_current_context_http(http))
+	if (contexts.top().first == HTTP)
 	{
-		Http	&current_http = get_current_http_context(http);
+		Http	&current_http = get_context<Http>(contexts);
 
 		for (std::vector<std::string>::const_iterator it = pages.begin(); it != pages.end(); it++)
 		{
@@ -907,9 +907,9 @@ int	parse_index(Http &http, const std::string &directive, const std::vector<std:
 				current_http.index.push_back(*it);
 		}
 	}
-	else if (is_current_context_server(http))
+	else if (contexts.top().first == SERVER)
 	{
-		Server	&current_server = get_current_server_context(http);
+		Server	&current_server = get_context<Server>(contexts);
 
 		for (std::vector<std::string>::const_iterator it = pages.begin(); it != pages.end(); it++)
 		{
@@ -919,7 +919,7 @@ int	parse_index(Http &http, const std::string &directive, const std::vector<std:
 	}
 	else
 	{
-		Location	&current_location = get_current_location_context(http);
+		Location	&current_location = get_context<Location>(contexts);
 
 		for (std::vector<std::string>::const_iterator it = pages.begin(); it != pages.end(); it++)
 		{
@@ -936,7 +936,7 @@ int	parse_index(Http &http, const std::string &directive, const std::vector<std:
 
 ////////////////////////////////////////////////////////////////////////////////
 
-int	parse_cgi(Http &http, const std::string &directive, const std::vector<std::string> &args, const size_t l)
+int	parse_cgi(std::stack<std::pair<e_context, void*>> &contexts, const std::string &directive, const std::vector<std::string> &args, const size_t l)
 {
 	const std::set<std::string>						extensions(args.begin(), args.end() - 1);
 	std::string										cgi_path;
@@ -961,7 +961,7 @@ int	parse_cgi(Http &http, const std::string &directive, const std::vector<std::s
 		cgi.insert(std::pair<std::string, std::string>(*it, cgi_path));
 
 	// Insert or assign
-	Location	&current_location = get_current_location_context(http);
+	Location	&current_location = get_context<Location>(contexts);
 	for (std::map<std::string, std::string>::iterator it = cgi.begin(); it != cgi.end(); it++)
 	{
 		pos = current_location.cgi.find(it->first);
@@ -1041,7 +1041,7 @@ int	parse_configuration_file(Http &http, std::ifstream &ifs)
 					return (-1);
 				if (args.size() != 1)
 					return (invalid_number_of_arguments_error(directive, l));
-				if (parse_listen(http, directive, args, l) < 0)
+				if (parse_listen(contexts, directive, args, l) < 0)
 					return (-1);
 			}
 			else if (*token == "server_name")
@@ -1053,7 +1053,7 @@ int	parse_configuration_file(Http &http, std::ifstream &ifs)
 					return (-1);
 				if (args.size() != 1)
 					return (invalid_number_of_arguments_error(directive, l));
-				if (parse_server_name(http, directive, args, l) < 0)
+				if (parse_server_name(contexts, directive, args, l) < 0)
 					return (-1);
 			}
 			else if (*token == "error_page")
@@ -1065,7 +1065,7 @@ int	parse_configuration_file(Http &http, std::ifstream &ifs)
 					return (-1);
 				if (args.size() < 2)
 					return (invalid_number_of_arguments_error(directive, l));
-				if (parse_error_page(http, directive, args, l) < 0)
+				if (parse_error_page(contexts, directive, args, l) < 0)
 					return (-1);
 			}
 			else if (*token == "client_max_body_size")
@@ -1077,7 +1077,7 @@ int	parse_configuration_file(Http &http, std::ifstream &ifs)
 					return (-1);
 				if (args.size() != 1)
 					return (invalid_number_of_arguments_error(directive, l));
-				if (parse_client_max_body_size(http, directive, args, l) < 0)
+				if (parse_client_max_body_size(contexts, directive, args, l) < 0)
 					return (-1);
 			}
 			else if (*token == "limit_except")
@@ -1090,7 +1090,7 @@ int	parse_configuration_file(Http &http, std::ifstream &ifs)
 					return (-1);
 				if (args.size() < 1)
 					return (invalid_number_of_arguments_error(directive, l));
-				if (parse_limit_except(http, directive, args, l) < 0)
+				if (parse_limit_except(contexts, directive, args, l) < 0)
 					return (-1);
 			}
 			else if (*token == "return")
@@ -1102,7 +1102,7 @@ int	parse_configuration_file(Http &http, std::ifstream &ifs)
 					return (-1);
 				if (args.size() < 1 || 2 < args.size())
 					return (invalid_number_of_arguments_error(directive, l));
-				if (parse_return(http, directive, args, l) < 0)
+				if (parse_return(contexts, directive, args, l) < 0)
 					return (-1);
 			}
 			else if (*token == "root")
@@ -1114,7 +1114,7 @@ int	parse_configuration_file(Http &http, std::ifstream &ifs)
 					return (-1);
 				if (args.size() != 1)
 					return (invalid_number_of_arguments_error(directive, l));
-				if (parse_root(http, directive, args, l) < 0)
+				if (parse_root(contexts, directive, args, l) < 0)
 					return (-1);
 			}
 			else if (*token == "autoindex")
@@ -1126,7 +1126,7 @@ int	parse_configuration_file(Http &http, std::ifstream &ifs)
 					return (-1);
 				if (args.size() != 1)
 					return (invalid_number_of_arguments_error(directive, l));
-				if (parse_autoindex(http, directive, args, l) < 0)
+				if (parse_autoindex(contexts, directive, args, l) < 0)
 					return (-1);
 			}
 			else if (*token == "index")
@@ -1138,7 +1138,7 @@ int	parse_configuration_file(Http &http, std::ifstream &ifs)
 					return (-1);
 				if (args.size() < 1)
 					return (invalid_number_of_arguments_error(directive, l));
-				if (parse_index(http, directive, args, l) < 0)
+				if (parse_index(contexts, directive, args, l) < 0)
 					return (-1);
 			}
 			else if (*token == "cgi")
@@ -1150,7 +1150,7 @@ int	parse_configuration_file(Http &http, std::ifstream &ifs)
 					return (-1);
 				if (args.size() < 2)
 					return (invalid_number_of_arguments_error(directive, l));
-				if (parse_cgi(http, directive, args, l) < 0)
+				if (parse_cgi(contexts, directive, args, l) < 0)
 					return (-1);
 			}
 			else
