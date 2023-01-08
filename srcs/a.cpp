@@ -27,7 +27,7 @@
 // => Oui, avec absolute:true et symbolic_link_resolution:true
 // VERIFIER SI LOCATION RENVOIE UNE ERREUR SI LE CHEMIN NE COMMENCE PAS PAR '/' --> DONE AND APPLY
 // => Non. Autorisé avec le comportement ci-dessus.
-// VERIFIER LE COMPORTEMENT AVEC PLUSIEURS LOCATION DESIGNANT LE MEME CHEMIN --> TO-DO
+// VERIFIER LE COMPORTEMENT AVEC PLUSIEURS LOCATION DESIGNANT LE MEME CHEMIN --> DONE AND APPLY
 // duplicate location "/" in /etc/nginx/nginx.conf:xx
 
 #include <iostream>
@@ -426,6 +426,23 @@ static std::string	normalize_path(const std::string &directive, const size_t l, 
 	for (std::vector<std::string>::const_iterator it = normalized_components.begin(); it != normalized_components.end(); it++)
 		path += '/' + *it;
 	return (path.empty() ? "/" : path);
+}
+
+////////////////////////////////////////////////////////////////////////////////
+
+void	parse_http(std::stack<std::pair<e_context, void *>> &contexts, Http &http)
+{
+	contexts.push(std::pair<e_context, void *>(HTTP, &http));
+}
+
+////////////////////////////////////////////////////////////////////////////////
+
+void	parse_server(std::stack<std::pair<e_context, void *>> &contexts)
+{
+	Http	&http = (*(reinterpret_cast<Http *>(contexts.top().second)));
+
+	http.server.push_back(Server(http));
+	contexts.push(std::pair<e_context, void *>(SERVER, &(http.server.back())));
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -981,7 +998,7 @@ int	parse_configuration_file(Http &http, std::ifstream &ifs)
 					return (-1);
 				if (args.size() != 0)
 					return (invalid_number_of_arguments_error(directive, l));
-				contexts.push(std::pair<e_context, void *>(HTTP, &http));
+				parse_http(contexts, http);
 			}
 			else if (*token == "server")
 			{
@@ -992,8 +1009,7 @@ int	parse_configuration_file(Http &http, std::ifstream &ifs)
 					return (-1);
 				if (args.size() != 0)
 					return (invalid_number_of_arguments_error(directive, l));
-				(*(reinterpret_cast<Http *>(contexts.top().second))).server.push_back(Server((*(reinterpret_cast<Http *>(contexts.top().second)))));
-				contexts.push(std::pair<e_context, void *>(SERVER, &((*(reinterpret_cast<Http *>(contexts.top().second))).server.back())));
+				parse_server(contexts);
 			}
 			else if (*token == "location")
 			{
