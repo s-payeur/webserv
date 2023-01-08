@@ -12,7 +12,7 @@
 
 // - PARSER CORRECTEMENT LOCATION --> DONE
 // - METTRE DANS LES STRUCTURES --> ~DONE ?
-// - AJOUTER L'ERREUR SI LOCATION FAIT PAS PARTIE DE LA LOCATION PRECEDENT --> TO-DO
+// - AJOUTER L'ERREUR SI LOCATION FAIT PAS PARTIE DE LA LOCATION PRECEDENT --> DONE
 // location "/b" is outside location "/a" in /etc/nginx/nginx.conf:xx
 // - GERER LES DOUBLONS --> TO-DO
 // "client_max_body_size" directive is duplicate in /etc/nginx/nginx.conf:xx
@@ -23,11 +23,11 @@
 // tous les blocs enfant donc les valeurs en question ne sont pas définies (d'après le flag).
 
 
-// VERIFIER SI LOCATION ACCEPTE ./ ../
+// VERIFIER SI LOCATION ACCEPTE ./ ../ --> DONE AND APPLY
 // => Oui, avec absolute:true et symbolic_link_resolution:true
-// VERIFIER SI LOCATION RENVOIE UNE ERREUR SI LE CHEMIN NE COMMENCE PAS PAR '/'
-// => Non, autorisé avec le comportement ci-dessus.
-// VERIFIER LE COMPORTEMENT AVEC PLUSIEURS LOCATION DESIGNANT LE MEME CHEMIN
+// VERIFIER SI LOCATION RENVOIE UNE ERREUR SI LE CHEMIN NE COMMENCE PAS PAR '/' --> DONE AND APPLY
+// => Non. Autorisé avec le comportement ci-dessus.
+// VERIFIER LE COMPORTEMENT AVEC PLUSIEURS LOCATION DESIGNANT LE MEME CHEMIN --> TO-DO
 // duplicate location "/" in /etc/nginx/nginx.conf:xx
 
 #include <iostream>
@@ -52,6 +52,39 @@ enum e_context {
 	SERVER = 4,
 	LOCATION = 8
 };
+
+////////////////////////////////////////////////////////////////////////////////
+
+bool    is_current_context_http(const Http &http)
+{
+    return (http.server.empty());
+}
+
+bool    is_current_context_server(const Http &http)
+{
+    return (http.server.back().location.empty());
+}
+
+Http    &get_current_http_context(Http &http)
+{
+    return (http);
+}
+
+Server  &get_current_server_context(Http &http)
+{
+    return (http.server.back());
+}
+
+Location    &get_current_location_context(Http &http)
+{
+    Location    *location;
+
+    location = &(http.server.back().location.back());
+    while (!((*location).location.empty()))
+        location = &((*location).location.back());
+    return (*location);
+}
+
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -107,9 +140,20 @@ int	value_must_be_between_error(const std::string &directive, const size_t l, co
 	return (parsing_error("value '", value, unit, "' must be between ", min, unit, " and ", max, unit, " in '", directive, "' directive (line ", l, ")"));
 }
 
-int	location_is_outside_location_error(const std::string &directive, const size_t l, const std::string &location1, const std::string &location2)
+int	duplicate_location_error(const std::string &directive, const size_t l, const std::string &location, const std::string &aka)
 {
-	return (parsing_error("location '", location1, "' is outside location '", location2, "' in '", directive, "' directive (line ", l, ")"));
+	if (location == aka)
+		return (parsing_error("duplicate location '", location, "' in '", directive, "' directive (line ", l, ")"));
+	else
+		return (parsing_error("duplicate location '", location, "' (aka '", aka, "') in '", directive, "' directive (line ", l, ")"));
+}
+
+int	location_is_outside_location_error(const std::string &directive, const size_t l, const std::string &location1, const std::string &aka, const std::string &location2)
+{
+	if (location1 == aka)
+		return (parsing_error("location '", location1, "' is outside location '", location2, "' in '", directive, "' directive (line ", l, ")"));
+	else
+		return (parsing_error("location '", location1, "' (aka '", aka, "') is outside location '", location2, "' in '", directive, "' directive (line ", l, ")"));
 }
 
 int	invalid_host_error(const std::string &directive, const size_t l, const std::string &value)
@@ -243,11 +287,11 @@ static int	get_directive_arguments(const std::string &directive, std::vector<std
 	return (0);
 }
 
-int	parse_directive(std::ifstream &ifs, std::string &directive, std::vector<std::string> &args, enum e_context context, size_t allowed_contexts, std::vector<std::string> &tokens, std::vector<std::string>::const_iterator &token, size_t l)
+int	parse_directive(std::ifstream &ifs, std::string &directive, std::vector<std::string> &args, std::pair<e_context, void *> context, size_t allowed_contexts, std::vector<std::string> &tokens, std::vector<std::string>::const_iterator &token, size_t l)
 {
 	directive = *token++;
 	// Check context validity
-	if (!(context & allowed_contexts))
+	if (!(context.first & allowed_contexts))
 		return (directive_not_allowed_here_error(directive, l));
 	if (get_directive_arguments(directive, args, tokens, token, l) < 0)
 		return (-1);
@@ -277,11 +321,11 @@ static int	get_context_arguments(const std::string &directive, std::vector<std::
 	return (0);
 }
 
-int	parse_context(std::ifstream &ifs, std::string &directive, std::vector<std::string> &args, enum e_context context, size_t allowed_contexts, std::vector<std::string> &tokens, std::vector<std::string>::const_iterator &token, size_t l)
+int	parse_context(std::ifstream &ifs, std::string &directive, std::vector<std::string> &args, std::pair<e_context, void *> context, size_t allowed_contexts, std::vector<std::string> &tokens, std::vector<std::string>::const_iterator &token, size_t l)
 {
 	directive = *token++;
 	// Check context validity
-	if (!(context & allowed_contexts))
+	if (!(context.first & allowed_contexts))
 		return (directive_not_allowed_here_error(directive, l));
 	if (get_context_arguments(directive, args, tokens, token, l) < 0)
 		return (-1);
@@ -294,40 +338,6 @@ int	parse_context(std::ifstream &ifs, std::string &directive, std::vector<std::s
 	}
 	return (0);
 }
-
-
-////////////////////////////////////////////////////////////////////////////////
-
-bool	is_current_context_http(const Http &http)
-{
-	return (http.server.empty());
-}
-
-bool	is_current_context_server(const Http &http)
-{
-	return (http.server.back().location.empty());
-}
-
-Http	&get_current_http_context(Http &http)
-{
-	return (http);
-}
-
-Server	&get_current_server_context(Http &http)
-{
-	return (http.server.back());
-}
-
-Location	&get_current_location_context(Http &http)
-{
-	Location	*location;
-
-	location = &(http.server.back().location.back());
-	while (!((*location).location.empty()))
-		location = &((*location).location.back());
-	return (*location);
-}
-
 
 ////////////////////////////////////////////////////////////////////////////////
 // LOCATION, ROOT, INDEX, CGI
@@ -420,7 +430,7 @@ static std::string	normalize_path(const std::string &directive, const size_t l, 
 
 ////////////////////////////////////////////////////////////////////////////////
 
-int	parse_location(Http &http, const std::string &directive, const std::vector<std::string> &args, const size_t l)
+int	parse_location(std::stack<std::pair<e_context, void *>> &contexts, const std::string &directive, const std::vector<std::string> &args, const size_t l)
 {
 	std::string	uri;
 
@@ -431,20 +441,34 @@ int	parse_location(Http &http, const std::string &directive, const std::vector<s
 	if (uri.size() >= PATH_MAX)
 		return (too_long_path_after_resolution_error(directive, l, uri.substr(0, 10) + "..."));
 
-
-	if (is_current_context_server(http))
+	if (contexts.top().first == SERVER)
 	{
-		get_current_server_context(http).location.push_back(Location(get_current_server_context(http), uri));
+		Server	&server = (*(reinterpret_cast<Server *>(contexts.top().second)));
+
+		for (std::vector<Location>::const_iterator it = server.location.begin(); it != server.location.end(); it++)
+		{
+			if (uri == (*it).uri)
+				return (duplicate_location_error(directive, l, args[0], uri));
+		}
+		server.location.push_back(Location(server, uri));
+		contexts.push(std::pair<e_context, void *>(LOCATION, &(server.location.back())));
 	}
 	else
 	{
-		Location	&current_location = get_current_location_context(http);
+		Location	&location = (*(reinterpret_cast<Location *>(contexts.top().second)));
 
-		if (uri.find(current_location.uri) != 0)
-			return (location_is_outside_location_error(directive, l, uri, current_location.uri));
-
-		current_location.location.push_back(Location(current_location, uri));
+		if ((uri != location.uri) && (uri.find(location.uri) != 0 \
+		|| uri.size() <= location.uri.size() || uri[location.uri.size()] != '/'))
+			return (location_is_outside_location_error(directive, l, args[0], uri, location.uri));
+		for (std::vector<Location>::const_iterator it = location.location.begin(); it != location.location.end(); it++)
+		{
+			if (uri == (*it).uri)
+				return (duplicate_location_error(directive, l, args[0], uri));
+		}
+		location.location.push_back(Location(location, uri));
+		contexts.push(std::pair<e_context, void *>(LOCATION, &(location.location.back())));
 	}
+
 //	std::cout << "-->" << uri << std::endl;
 	return (0);
 }
@@ -936,13 +960,13 @@ int	parse_cgi(Http &http, const std::string &directive, const std::vector<std::s
 
 int	parse_configuration_file(Http &http, std::ifstream &ifs)
 {
-	std::stack<e_context>						contexts;
+	std::stack<std::pair<e_context, void *>>	contexts;
 	std::vector<std::string>					tokens;
 	std::vector<std::string>::const_iterator	token;
 	std::string::size_type						l;
 
 	// Default context
-	contexts.push(MAIN);
+	contexts.push(std::pair<e_context, void *>(MAIN, NULL));
 	l = 0;
 	while (extract_tokens(ifs, tokens, token, l) == 0)
 	{
@@ -957,7 +981,7 @@ int	parse_configuration_file(Http &http, std::ifstream &ifs)
 					return (-1);
 				if (args.size() != 0)
 					return (invalid_number_of_arguments_error(directive, l));
-				contexts.push(HTTP);
+				contexts.push(std::pair<e_context, void *>(HTTP, &http));
 			}
 			else if (*token == "server")
 			{
@@ -968,10 +992,8 @@ int	parse_configuration_file(Http &http, std::ifstream &ifs)
 					return (-1);
 				if (args.size() != 0)
 					return (invalid_number_of_arguments_error(directive, l));
-
-				get_current_http_context(http).server.push_back(Server(http));
-
-				contexts.push(SERVER);
+				(*(reinterpret_cast<Http *>(contexts.top().second))).server.push_back(Server((*(reinterpret_cast<Http *>(contexts.top().second)))));
+				contexts.push(std::pair<e_context, void *>(SERVER, &((*(reinterpret_cast<Http *>(contexts.top().second))).server.back())));
 			}
 			else if (*token == "location")
 			{
@@ -982,10 +1004,8 @@ int	parse_configuration_file(Http &http, std::ifstream &ifs)
 					return (-1);
 				if (args.size() != 1)
 					return (invalid_number_of_arguments_error(directive, l));
-				if (parse_location(http, directive, args, l) < 0)
+				if (parse_location(contexts, directive, args, l) < 0)
 					return (-1);
-
-				contexts.push(LOCATION);
 			}
 			else if (*token == "}")
 			{
