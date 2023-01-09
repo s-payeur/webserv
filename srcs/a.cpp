@@ -6,7 +6,7 @@
 /*   By: spayeur <spayeur@student.42.fr>            +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*	 Created: 2022/12/17 10:43:15 by spayeur		   #+#	  #+#			  */
-/*   Updated: 2023/01/09 00:38:24 by spayeur          ###   ########.fr       */
+/*   Updated: 2023/01/09 11:19:31 by spayeur          ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -16,7 +16,7 @@
 // location "/b" is outside location "/a" in /etc/nginx/nginx.conf:xx
 // [-] GERER LES DOUBLONS
 // "client_max_body_size" directive is duplicate in /etc/nginx/nginx.conf:xx
-// [-] CORRIGER LE PARSING DANS LE CAS OU UNE DIRECTIVE SE TROUVE APRES UN CONTEXT
+// [x] CORRIGER LE PARSING DANS LE CAS OU UNE DIRECTIVE SE TROUVE APRES UN CONTEXT
 // -> Pour ce faire, la structures des classes http, server et location du commit (b12d4a7)
 // et à la fin d'un context, lancer un post-parsing qui définie pour toutes les valeurs
 // définie manuellement du bloc en question (d'après le flag) les mêmes valeurs pour 
@@ -448,7 +448,7 @@ int	parse_location(std::stack<std::pair<e_context, void *>> &contexts, const std
 		Location	&location = get_context<Location>(contexts.top());
 
 		if ((uri != location.uri) && (uri.find(location.uri) != 0 \
-		|| uri.size() <= location.uri.size() || uri[location.uri.size()] != '/'))
+		|| uri.size() <= location.uri.size() || (location.uri != "/" && uri[location.uri.size()] != '/')))
 			return (location_is_outside_location_error(directive, l, args[0], uri, location.uri));
 		for (std::vector<Location>::const_iterator it = location.location.begin(); it != location.location.end(); it++)
 		{
@@ -581,6 +581,7 @@ int	parse_listen(std::pair<e_context, void*> &context, const std::string &direct
 		return (port_must_be_between_error(directive, l, port, 0, 65535));
 
 	get_context<Server>(context).listen = std::pair<std::string, std::string>(host, port);
+	get_context<Server>(context).set_flag_listen(true);
 //	std::cout << "-->" << host << ":" << port << std::endl;
 	return (0);
 }
@@ -592,6 +593,7 @@ int	parse_server_name(std::pair<e_context, void*> &context, const std::string &d
 	const std::string	server_name(args[0]);
 
 	get_context<Server>(context).server_name = server_name;
+	get_context<Server>(context).set_flag_server_name(true);
 //	std::cout << "-->" << server_name << std::endl;;
 	return (0);
 }
@@ -616,11 +618,20 @@ int	parse_error_page(std::pair<e_context, void*> &context, const std::string &di
 	}
 
 	if (context.first == HTTP)
+	{
 		get_context<Http>(context).error_page.insert(error_page.begin(), error_page.end());
+		get_context<Http>(context).set_flag_error_page(true);
+	}
 	else if (context.first == SERVER)
+	{
 		get_context<Server>(context).error_page.insert(error_page.begin(), error_page.end());
+		get_context<Server>(context).set_flag_error_page(true);
+	}
 	else
+	{
 		get_context<Location>(context).error_page.insert(error_page.begin(), error_page.end());
+		get_context<Location>(context).set_flag_error_page(true);
+	}
 //	std::cout << "-->";
 //	for (std::set<std::string>::const_iterator it = codes.begin(); it != codes.end(); it++)
 //		std::cout << *it << " ";
@@ -678,11 +689,20 @@ int	parse_client_max_body_size(std::pair<e_context, void*> &context, const std::
 		size *= 1024 * 1024 * 1024;
 
 	if (context.first == HTTP)
+	{
 		get_context<Http>(context).client_max_body_size = size;
+		get_context<Http>(context).set_flag_client_max_body_size(true);
+	}
 	else if (context.first == SERVER)
+	{
 		get_context<Server>(context).client_max_body_size = size;
+		get_context<Server>(context).set_flag_client_max_body_size(true);
+	}
 	else
+	{
 		get_context<Location>(context).client_max_body_size = size;
+		get_context<Location>(context).set_flag_client_max_body_size(true);
+	}
 //	std::cout << "-->" << size << std::endl;
 	return (0);
 }
@@ -714,6 +734,7 @@ int	parse_limit_except(std::pair<e_context, void*> &context, const std::string &
 			if (std::find(current_http.limit_except.begin(), current_http.limit_except.end(), *it) == current_http.limit_except.end())
 				current_http.limit_except.push_back(*it);
 		}
+		get_context<Http>(context).set_flag_limit_except(true);
 	}
 	else if (context.first == SERVER)
 	{
@@ -724,6 +745,7 @@ int	parse_limit_except(std::pair<e_context, void*> &context, const std::string &
 			if (std::find(current_server.limit_except.begin(), current_server.limit_except.end(), *it) == current_server.limit_except.end())
 				current_server.limit_except.push_back(*it);
 		}
+		get_context<Server>(context).set_flag_limit_except(true);
 	}
 	else
 	{
@@ -734,6 +756,7 @@ int	parse_limit_except(std::pair<e_context, void*> &context, const std::string &
 			if (std::find(current_location.limit_except.begin(), current_location.limit_except.end(), *it) == current_location.limit_except.end())
 				current_location.limit_except.push_back(*it);
 		}
+		get_context<Location>(context).set_flag_limit_except(true);
 	}
 //	std::cout << "-->";
 //	for (std::set<std::string>::const_iterator it = http_methods.begin(); it != http_methods.end(); it++)
@@ -778,9 +801,15 @@ int	parse_return(std::pair<e_context, void*> &context, const std::string &direct
 		return (return_code_must_be_between_error(directive, l, code, 100, 599));
 
 	if (context.first == SERVER)
+	{
 		get_context<Server>(context).return_ = std::pair<int, std::string>(std::stoi(code), text_url);
+		get_context<Server>(context).set_flag_return_(true);
+	}
 	else
+	{
 		get_context<Location>(context).return_ = std::pair<int, std::string>(std::stoi(code), text_url);
+		get_context<Location>(context).set_flag_return_(true);
+	}
 //	std::cout << "-->" << code << " <--> " << text_url << std::endl;
 	return (0);
 }
@@ -809,11 +838,20 @@ int	parse_root(std::pair<e_context, void*> &context, const std::string &directiv
 		return (too_long_path_after_resolution_error(directive, l, root.substr(0, 10) + "..."));
 
 	if (context.first == HTTP)
+	{
 		get_context<Http>(context).root = root;
+		get_context<Http>(context).set_flag_root(true);
+	}
 	else if (context.first == SERVER)
+	{
 		get_context<Server>(context).root = root;
+		get_context<Server>(context).set_flag_root(true);
+	}
 	else
+	{
 		get_context<Location>(context).root = root;
+		get_context<Location>(context).set_flag_root(true);
+	}
 //	std::cout << "-->" << root << std::endl;
 	return (0);
 }
@@ -836,11 +874,20 @@ int	parse_autoindex(std::pair<e_context, void*> &context, const std::string &dir
 		return (invalid_value_error(directive, l, value));
 
 	if (context.first == HTTP)
+	{
 		get_context<Http>(context).autoindex = autoindex;
+		get_context<Http>(context).set_flag_autoindex(true);
+	}
 	else if (context.first == SERVER)
+	{
 		get_context<Server>(context).autoindex = autoindex;
+		get_context<Server>(context).set_flag_autoindex(true);
+	}
 	else
+	{
 		get_context<Location>(context).autoindex = autoindex;
+		get_context<Location>(context).set_flag_autoindex(true);
+	}
 //	std::cout << std::boolalpha << "-->" << autoindex << std::endl;
 	return (0);
 }
@@ -874,6 +921,7 @@ int	parse_index(std::pair<e_context, void*> &context, const std::string &directi
 			if (std::find(current_http.index.begin(), current_http.index.end(), *it) == current_http.index.end())
 				current_http.index.push_back(*it);
 		}
+		get_context<Http>(context).set_flag_index(true);
 	}
 	else if (context.first == SERVER)
 	{
@@ -884,6 +932,7 @@ int	parse_index(std::pair<e_context, void*> &context, const std::string &directi
 			if (std::find(current_server.index.begin(), current_server.index.end(), *it) == current_server.index.end())
 				current_server.index.push_back(*it);
 		}
+		get_context<Server>(context).set_flag_index(true);
 	}
 	else
 	{
@@ -894,6 +943,7 @@ int	parse_index(std::pair<e_context, void*> &context, const std::string &directi
 			if (std::find(current_location.index.begin(), current_location.index.end(), *it) == current_location.index.end())
 				current_location.index.push_back(*it);
 		}
+		get_context<Location>(context).set_flag_index(true);
 	}
 //	std::cout << "-->";
 //	for (std::vector<std::string>::const_iterator it = pages.begin(); it != pages.end(); it++)
@@ -939,6 +989,7 @@ int	parse_cgi(std::pair<e_context, void*> &context, const std::string &directive
 			pos->second = it->second;
 	}
 
+	get_context<Location>(context).set_flag_cgi(true);
 //	std::cout << "-->";
 //	for (std::set<std::string>::const_iterator it = extensions.begin(); it != extensions.end(); it++)
 //		std::cout << *it << " ";
@@ -947,6 +998,145 @@ int	parse_cgi(std::pair<e_context, void*> &context, const std::string &directive
 }
 
 ////////////////////////////////////////////////////////////////////////////////
+
+static void	undiff(const Http &http, Server &server)
+{
+	if (http.get_flag_error_page() && !(server.get_flag_error_page()))
+	{
+		server.error_page = http.error_page;
+		server.set_flag_error_page(true);
+	}
+	if (http.get_flag_client_max_body_size() && !(server.get_flag_client_max_body_size()))
+	{
+		server.client_max_body_size = http.client_max_body_size;
+		server.set_flag_client_max_body_size(true);
+	}
+	if (http.get_flag_limit_except() && !(server.get_flag_limit_except()))
+	{
+		server.limit_except = http.limit_except;
+		server.set_flag_limit_except(true);
+	}
+	if (http.get_flag_root() && !(server.get_flag_root()))
+	{
+		server.root = http.root;
+		server.set_flag_root(true);
+	}
+	if (http.get_flag_autoindex() && !(server.get_flag_autoindex()))
+	{
+		server.autoindex = http.autoindex;
+		server.set_flag_autoindex(true);
+	}
+	if (http.get_flag_index() && !(server.get_flag_index()))
+	{
+		server.index = http.index;
+		server.set_flag_index(true);
+	}
+}
+
+static void	undiff(const Server &server, Location &location)
+{
+	if (server.get_flag_error_page() && !(location.get_flag_error_page()))
+	{
+		location.error_page = server.error_page;
+		location.set_flag_error_page(true);
+	}
+	if (server.get_flag_client_max_body_size() && !(location.get_flag_client_max_body_size()))
+	{
+		location.client_max_body_size = server.client_max_body_size;
+		location.set_flag_client_max_body_size(true);
+	}
+	if (server.get_flag_limit_except() && !(location.get_flag_limit_except()))
+	{
+		location.limit_except = server.limit_except;
+		location.set_flag_limit_except(true);
+	}
+	if (server.get_flag_return_() && !(location.get_flag_return_()))
+	{
+		location.return_ = server.return_;
+		location.set_flag_return_(true);
+	}
+	if (server.get_flag_root() && !(location.get_flag_root()))
+	{
+		location.root = server.root;
+		location.set_flag_root(true);
+	}
+	if (server.get_flag_autoindex() && !(location.get_flag_autoindex()))
+	{
+		location.autoindex = server.autoindex;
+		location.set_flag_autoindex(true);
+	}
+	if (server.get_flag_index() && !(location.get_flag_index()))
+	{
+		location.index = server.index;
+		location.set_flag_index(true);
+	}
+}
+
+static void	undiff(const Location &location, Location &sublocation)
+{
+	if (location.get_flag_error_page() && !(sublocation.get_flag_error_page()))
+	{
+		sublocation.error_page = location.error_page;
+		sublocation.set_flag_error_page(true);
+	}
+	if (location.get_flag_client_max_body_size() && !(sublocation.get_flag_client_max_body_size()))
+	{
+		sublocation.client_max_body_size = location.client_max_body_size;
+		sublocation.set_flag_client_max_body_size(true);
+	}
+	if (location.get_flag_limit_except() && !(sublocation.get_flag_limit_except()))
+	{
+		sublocation.limit_except = location.limit_except;
+		sublocation.set_flag_limit_except(true);
+	}
+	if (location.get_flag_return_() && !(sublocation.get_flag_return_()))
+	{
+		sublocation.return_ = location.return_;
+		sublocation.set_flag_return_(true);
+	}
+	if (location.get_flag_root() && !(sublocation.get_flag_root()))
+	{
+		sublocation.root = location.root;
+		sublocation.set_flag_root(true);
+	}
+	if (location.get_flag_autoindex() && !(sublocation.get_flag_autoindex()))
+	{
+		sublocation.autoindex = location.autoindex;
+		sublocation.set_flag_autoindex(true);
+	}
+	if (location.get_flag_index() && !(sublocation.get_flag_index()))
+	{
+		sublocation.index = location.index;
+		sublocation.set_flag_index(true);
+	}
+	if (location.get_flag_cgi() && !(sublocation.get_flag_cgi()))
+	{
+		sublocation.cgi = location.cgi;
+		sublocation.set_flag_cgi(true);
+	}
+}
+
+static void	post_parsing_location(Location &location)
+{
+	for (std::vector<Location>::iterator sublocation_it = location.location.begin(); sublocation_it != location.location.end(); sublocation_it++)
+	{
+		undiff(location, *sublocation_it);
+		post_parsing_location(*sublocation_it);
+	}
+}
+
+static void	post_parsing(Http &http)
+{
+	for (std::vector<Server>::iterator server_it = http.server.begin(); server_it != http.server.end(); server_it++)
+	{
+		undiff(http, *server_it);
+		for (std::vector<Location>::iterator location_it = (*server_it).location.begin(); location_it != (*server_it).location.end(); location_it++)
+		{
+			undiff(*server_it, *location_it);
+			post_parsing_location(*location_it);
+		}
+	}
+}
 
 int	parse_configuration_file(Http &http, std::ifstream &ifs)
 {
@@ -1126,6 +1316,7 @@ int	parse_configuration_file(Http &http, std::ifstream &ifs)
 			token++;
 		}
 	}
+	post_parsing(http);
 	if (!(ifs.eof()))
 		return (-1);
 	return (0);
