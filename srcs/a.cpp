@@ -6,12 +6,12 @@
 /*   By: spayeur <spayeur@student.42.fr>            +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*	 Created: 2022/12/17 10:43:15 by spayeur		   #+#	  #+#			  */
-/*   Updated: 2023/01/09 11:19:31 by spayeur          ###   ########.fr       */
+/*   Updated: 2023/01/09 14:18:35 by spayeur          ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
 // [x] PARSER CORRECTEMENT LOCATION
-// [~] METTRE DANS LES STRUCTURES
+// [x] METTRE DANS LES STRUCTURES
 // [x] AJOUTER L'ERREUR SI LOCATION FAIT PAS PARTIE DE LA LOCATION PRECEDENT
 // location "/b" is outside location "/a" in /etc/nginx/nginx.conf:xx
 // [-] GERER LES DOUBLONS
@@ -29,6 +29,7 @@
 // => Non. Autorisé avec le comportement ci-dessus.
 // [x] VERIFIER LE COMPORTEMENT AVEC PLUSIEURS LOCATION DESIGNANT LE MEME CHEMIN
 // duplicate location "/" in /etc/nginx/nginx.conf:xx
+// [-] VERIFIER SI LA VALEUR PAR DEFAUT DE LISTEN EN MODE NON-ROOT EST 8000 ou 8080
 
 #include <iostream>
 #include <fstream>
