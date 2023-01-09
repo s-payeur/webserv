@@ -1,34 +1,35 @@
 /* ************************************************************************** */
 /*                                                                            */
 /*                                                        :::      ::::::::   */
-/*   main.cpp                                           :+:      :+:    :+:   */
+/*   parse.cpp                                          :+:      :+:    :+:   */
 /*                                                    +:+ +:+         +:+     */
 /*   By: spayeur <marvin@42.fr>                     +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
-/*   Created: 2023/01/09 15:21:22 by spayeur           #+#    #+#             */
-/*   Updated: 2023/01/09 15:46:48 by spayeur          ###   ########.fr       */
+/*   Created: 2023/01/09 15:27:42 by spayeur           #+#    #+#             */
+/*   Updated: 2023/01/09 15:51:48 by spayeur          ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
-#include <string>
+#include <fstream>
 #include <iostream>
+#include <cstring>
 #include "Http.hpp"
 
-int	main(int argc, char **argv)
+int	parse(Http &http, const std::string &configuration_file)
 {
-	Http		http;
-	std::string	configuration_file;
+	std::ifstream	ifs;
 
-	if (argc > 2)
+	ifs.open(configuration_file.c_str());
+	if (!(ifs.is_open()))
 	{
-		std::cerr << "webserv: too many arguments" << std::endl;
-		return (1);
+		std::cerr << "webserv: " << configuration_file << ": " << strerror(errno) << std::endl;
+		return (-1);
 	}
-	if (argc == 1)
-		configuration_file = "conf/default.conf";
-	else
-		configuration_file = argv[1];
-	if (parse(http, configuration_file) < 0)
-		return (1);
+	if (core_parsing(http, ifs) < 0)
+	{
+		ifs.close();
+		return (-1);
+	}
+	ifs.close();
 	return (0);
 }
