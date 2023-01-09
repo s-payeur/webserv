@@ -6,7 +6,7 @@
 /*   By: spayeur <spayeur@student.42.fr>            +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*	 Created: 2022/12/17 10:43:15 by spayeur		   #+#	  #+#			  */
-/*   Updated: 2023/01/09 14:18:35 by spayeur          ###   ########.fr       */
+/*   Updated: 2023/01/09 14:34:07 by spayeur          ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -36,6 +36,7 @@
 #include <sstream>
 #include <string>
 #include <cstring>
+#include <cstdlib>
 #include <stack>
 #include <vector>
 #include <set>
@@ -404,14 +405,14 @@ static std::string	normalize_path(const std::string &directive, const size_t l, 
 
 ////////////////////////////////////////////////////////////////////////////////
 
-void	parse_http(std::stack<std::pair<e_context, void *>> &contexts, Http &http)
+void	parse_http(std::stack< std::pair<e_context, void *> > &contexts, Http &http)
 {
 	contexts.push(std::pair<e_context, void *>(HTTP, &http));
 }
 
 ////////////////////////////////////////////////////////////////////////////////
 
-void	parse_server(std::stack<std::pair<e_context, void *>> &contexts)
+void	parse_server(std::stack< std::pair<e_context, void *> > &contexts)
 {
 	Http	&http = get_context<Http>(contexts.top());
 
@@ -421,7 +422,7 @@ void	parse_server(std::stack<std::pair<e_context, void *>> &contexts)
 
 ////////////////////////////////////////////////////////////////////////////////
 
-int	parse_location(std::stack<std::pair<e_context, void *>> &contexts, const std::string &directive, const std::vector<std::string> &args, const size_t l)
+int	parse_location(std::stack< std::pair<e_context, void *> > &contexts, const std::string &directive, const std::vector<std::string> &args, const size_t l)
 {
 	std::string	uri;
 
@@ -589,7 +590,7 @@ int	parse_listen(std::pair<e_context, void*> &context, const std::string &direct
 
 ////////////////////////////////////////////////////////////////////////////////
 
-int	parse_server_name(std::pair<e_context, void*> &context, const std::string &directive, const std::vector<std::string> &args, const size_t l)
+int	parse_server_name(std::pair<e_context, void*> &context, std::vector<std::string> &args)
 {
 	const std::string	server_name(args[0]);
 
@@ -613,9 +614,9 @@ int	parse_error_page(std::pair<e_context, void*> &context, const std::string &di
 		if ((*it).find_first_not_of("0123456789") != std::string::npos)
 				return (invalid_value_error(directive, l, *it));
 		// Check error codes limit
-		if (std::stoi(*it) < 300 || std::stoi(*it) > 599)
+		if (std::atoi((*it).c_str()) < 300 || std::atoi((*it).c_str()) > 599)
 			return (value_must_be_between_error(directive, l, *it, 300, 599, ""));
-		error_page.insert(std::pair<int, std::string>(std::stoi(*it), page));
+		error_page.insert(std::pair<int, std::string>(std::atoi((*it).c_str()), page));
 	}
 
 	if (context.first == HTTP)
@@ -803,12 +804,12 @@ int	parse_return(std::pair<e_context, void*> &context, const std::string &direct
 
 	if (context.first == SERVER)
 	{
-		get_context<Server>(context).return_ = std::pair<int, std::string>(std::stoi(code), text_url);
+		get_context<Server>(context).return_ = std::pair<int, std::string>(std::atoi(code.c_str()), text_url);
 		get_context<Server>(context).set_flag_return_(true);
 	}
 	else
 	{
-		get_context<Location>(context).return_ = std::pair<int, std::string>(std::stoi(code), text_url);
+		get_context<Location>(context).return_ = std::pair<int, std::string>(std::atoi(code.c_str()), text_url);
 		get_context<Location>(context).set_flag_return_(true);
 	}
 //	std::cout << "-->" << code << " <--> " << text_url << std::endl;
@@ -1141,7 +1142,7 @@ static void	post_parsing(Http &http)
 
 int	parse_configuration_file(Http &http, std::ifstream &ifs)
 {
-	std::stack<std::pair<e_context, void *>>	contexts;
+	std::stack< std::pair<e_context, void *> >	contexts;
 	std::vector<std::string>					tokens;
 	std::vector<std::string>::const_iterator	token;
 	std::string::size_type						l;
@@ -1212,7 +1213,7 @@ int	parse_configuration_file(Http &http, std::ifstream &ifs)
 					return (-1);
 				if (args.size() != 1)
 					return (invalid_number_of_arguments_error(directive, l));
-				if (parse_server_name(contexts.top(), directive, args, l) < 0)
+				if (parse_server_name(contexts.top(), args) < 0)
 					return (-1);
 			}
 			else if (*token == "error_page")
