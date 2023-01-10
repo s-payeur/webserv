@@ -6,7 +6,7 @@
 /*   By: spayeur <marvin@42.fr>                     +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2023/01/09 15:27:42 by spayeur           #+#    #+#             */
-/*   Updated: 2023/01/09 15:51:48 by spayeur          ###   ########.fr       */
+/*   Updated: 2023/01/10 10:49:31 by spayeur          ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -14,6 +14,7 @@
 #include <iostream>
 #include <cstring>
 #include "Http.hpp"
+#include "parsing.hpp"
 
 int	parse(Http &http, const std::string &configuration_file)
 {

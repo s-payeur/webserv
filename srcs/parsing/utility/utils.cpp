@@ -6,7 +6,7 @@
 /*   By: spayeur <marvin@42.fr>                     +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2023/01/09 15:34:44 by spayeur           #+#    #+#             */
-/*   Updated: 2023/01/09 16:28:35 by spayeur          ###   ########.fr       */
+/*   Updated: 2023/01/10 11:27:44 by spayeur          ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -14,16 +14,9 @@
 #include <set>
 #include <string>
 #include <cstring>
-#include <utility>
 #include <limits.h>
 #include <unistd.h>
-#include "context.hpp"
-
-template <class T>
-T	&get_context(std::pair<e_context, void *> &context)
-{
-	return (*(reinterpret_cast<T *>(context.second)));
-}
+#include "parsing.hpp"
 
 static std::string	resolve_symbolic_link(std::string path)
 {
@@ -40,7 +33,7 @@ static std::string	resolve_symbolic_link(std::string path)
 		return (path.substr(0, path.rfind('/') + 1) + link_target);
 }
 
-std::string	normalize_path(const std::string &directive, const size_t l, std::string path, bool absolute_path, bool symbolic_link_resolution, std::set<std::string> link_components = std::set<std::string>())
+std::string	normalize_path(const std::string &directive, const size_t l, std::string path, bool absolute_path, bool symbolic_link_resolution, std::set<std::string> link_components/* = std::set<std::string>()*/)
 {
 	std::vector<std::string>	components;
 	std::vector<std::string>	normalized_components;

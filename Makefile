@@ -6,7 +6,7 @@
 #    By: spayeur <spayeur@student.42.fr>            +#+  +:+       +#+         #
 #                                                 +#+#+#+#+#+   +#+            #
 #    Created: 2022/04/26 23:29:42 by spayeur           #+#    #+#              #
-#    Updated: 2023/01/09 15:19:50 by spayeur          ###   ########.fr        #
+#    Updated: 2023/01/10 11:49:49 by spayeur          ###   ########.fr        #
 #                                                                              #
 # **************************************************************************** #
 
@@ -17,7 +17,8 @@
 NAME		=	webserv
 
 CC			=	c++
-CFLAGS		=	-Wall -Wextra -Werror -std=c++98
+#CFLAGS		=	-Wall -Wextra -Werror -std=c++98
+#CFLAGS		=	-Wall -Wextra -Werror
 INCS_DIR	=	incs
 SRCS_DIR	=	srcs
 
@@ -55,11 +56,13 @@ CLEAR_LINE	:= $(shell tput -Txterm el)
 #                                 Source files                                 #
 # **************************************************************************** #
 
-# ******************************** Mandatory ********************************* #
+# *********************************** Main *********************************** #
 
 SRCS_DEFAULT_FILES	=	main
 
 SRCS_DEFAULT		=	$(addprefix $(SRCS_DIR)/, $(SRCS_DEFAULT_FILES))
+
+# ********************************* Classes ********************************** #
 
 SRCS_CLASSES_FILES	=	Http \
 						Server \
@@ -67,9 +70,44 @@ SRCS_CLASSES_FILES	=	Http \
 
 SRCS_CLASSES		=	$(addprefix $(SRCS_DIR)/classes/, $(SRCS_CLASSES_FILES))
 
-SRCS_PARSING_FILES	=	a
+# ********************************* Parsing ********************************** #
 
-SRCS_PARSING		=	$(addprefix $(SRCS_DIR)/parsing/, $(SRCS_PARSING_FILES))
+SRCS_PARSING_DEFAULT_FILES	=	parse \
+								core_parsing \
+								tokens_extraction \
+								fix_parsing
+
+SRCS_PARSING_DEFAULT		=	$(addprefix $(SRCS_DIR)/parsing/, $(SRCS_PARSING_DEFAULT_FILES))
+
+SRCS_PARSING_CONTEXT_FILES	=	context \
+								http \
+								server \
+								location
+
+SRCS_PARSING_CONTEXT		=	$(addprefix $(SRCS_DIR)/parsing/context/, $(SRCS_PARSING_CONTEXT_FILES))
+
+SRCS_PARSING_DIRECTIVE_FILES	=	directive \
+									listen \
+									server_name \
+									error_page \
+									client_max_body_size \
+									limit_except \
+									return \
+									root \
+									autoindex \
+									index \
+									cgi
+
+SRCS_PARSING_DIRECTIVE			=	$(addprefix $(SRCS_DIR)/parsing/directive/, $(SRCS_PARSING_DIRECTIVE_FILES))
+
+SRCS_PARSING_UTILITY_FILES	=	error \
+								utils
+
+SRCS_PARSING_UTILITY		=	$(addprefix $(SRCS_DIR)/parsing/utility/, $(SRCS_PARSING_UTILITY_FILES))
+
+SRCS_PARSING		=	$(SRCS_PARSING_DEFAULT) $(SRCS_PARSING_CONTEXT) $(SRCS_PARSING_DIRECTIVE) $(SRCS_PARSING_UTILITY)
+
+# ********************************* Project ********************************** #
 
 SRCS_PROJECT		=	$(addsuffix .cpp, $(SRCS_DEFAULT) $(SRCS_CLASSES) $(SRCS_PARSING))
 
@@ -85,7 +123,7 @@ OBJS_PROJECT		=	$(SRCS_PROJECT:.cpp=.o)
 
 %.o:		%.cpp
 			@printf "$(CLEAR_LINE)$(BMAGENTA)$@\r$(END)"
-			@$(CC) $(CFLAGS) I $(INCS_DIR) -c $< -o $@
+			@$(CC) $(CFLAGS) -I $(INCS_DIR) -c $< -o $@
 
 all:		$(NAME)
 

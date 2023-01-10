@@ -1,26 +1,21 @@
 /* ************************************************************************** */
 /*                                                                            */
 /*                                                        :::      ::::::::   */
-/*   server_name.cpp                                    :+:      :+:    :+:   */
+/*   http.cpp                                           :+:      :+:    :+:   */
 /*                                                    +:+ +:+         +:+     */
 /*   By: spayeur <marvin@42.fr>                     +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
-/*   Created: 2023/01/09 16:42:01 by spayeur           #+#    #+#             */
-/*   Updated: 2023/01/09 16:42:57 by spayeur          ###   ########.fr       */
+/*   Created: 2023/01/09 16:29:39 by spayeur           #+#    #+#             */
+/*   Updated: 2023/01/10 10:49:01 by spayeur          ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
-#include <vector>
+#include <stack>
 #include <utility>
-#include <string>
-#include "Server.hpp"
-#include "context.hpp"
+#include "Http.hpp"
+#include "parsing.hpp"
 
-int	parse_server_name(std::pair<e_context, void*> &context, std::vector<std::string> &args)
+void	parse_http(std::stack< std::pair<e_context, void *> > &contexts, Http &http)
 {
-	const std::string	server_name(args[0]);
-
-	get_context<Server>(context).server_name = server_name;
-	get_context<Server>(context).set_flag_server_name(true);
-	return (0);
+	contexts.push(std::pair<e_context, void *>(HTTP, &http));
 }

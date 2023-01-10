@@ -6,7 +6,7 @@
 /*   By: spayeur <marvin@42.fr>                     +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2023/01/09 16:43:42 by spayeur           #+#    #+#             */
-/*   Updated: 2023/01/09 16:45:38 by spayeur          ###   ########.fr       */
+/*   Updated: 2023/01/10 10:48:18 by spayeur          ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -17,7 +17,7 @@
 #include "Http.hpp"
 #include "Server.hpp"
 #include "Location.hpp"
-#include "context.hpp"
+#include "parsing.hpp"
 
 int	parse_error_page(std::pair<e_context, void*> &context, const std::string &directive, const std::vector<std::string> &args, const std::string::size_type l)
 {

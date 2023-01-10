@@ -6,7 +6,7 @@
 /*   By: spayeur <marvin@42.fr>                     +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2023/01/09 16:34:26 by spayeur           #+#    #+#             */
-/*   Updated: 2023/01/09 16:36:05 by spayeur          ###   ########.fr       */
+/*   Updated: 2023/01/10 10:49:01 by spayeur          ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -15,7 +15,7 @@
 #include <limits.h>
 #include "Http.hpp"
 #include "Server.hpp"
-#include "context.hpp"
+#include "parsing.hpp"
 
 int	parse_location(std::stack< std::pair<e_context, void *> > &contexts, const std::string &directive, const std::vector<std::string> &args, const size_t l)
 {

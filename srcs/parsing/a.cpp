@@ -6,7 +6,7 @@
 /*   By: spayeur <spayeur@student.42.fr>            +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*	 Created: 2022/12/17 10:43:15 by spayeur		   #+#	  #+#			  */
-/*   Updated: 2023/01/09 16:58:52 by spayeur          ###   ########.fr       */
+/*   Updated: 2023/01/10 13:15:48 by spayeur          ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -29,7 +29,13 @@
 // => Non. Autorisé avec le comportement ci-dessus.
 // [x] VERIFIER LE COMPORTEMENT AVEC PLUSIEURS LOCATION DESIGNANT LE MEME CHEMIN
 // duplicate location "/" in /etc/nginx/nginx.conf:xx
-// [-] VERIFIER SI LA VALEUR PAR DEFAUT DE LISTEN EN MODE NON-ROOT EST 8000 ou 8080
+
+// [-] CORRIGER LA DIRECTIVE LISTEN
+// Accepte les doublons et les ajoutes à une liste. Si un doublons est strictement identique
+// à une autre directive (même arguments), renvoie un erreur.
+// a duplicate listen 0.0.0.0:8181 in /etc/nginx/nginx.conf:16
+// [-] CORRIGER LA DIRECTIVE SERVER_NAME
+// Accepte les doublons et les ajoutes a une liste. Accept plusieurs arguments par directive.
 
 #include <iostream>
 #include <fstream>

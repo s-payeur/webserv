@@ -6,7 +6,7 @@
 /*   By: spayeur <marvin@42.fr>                     +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2023/01/09 16:55:24 by spayeur           #+#    #+#             */
-/*   Updated: 2023/01/09 16:56:37 by spayeur          ###   ########.fr       */
+/*   Updated: 2023/01/10 10:48:18 by spayeur          ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -18,7 +18,7 @@
 #include "Http.hpp"
 #include "Server.hpp"
 #include "Location.hpp"
-#include "context.hpp"
+#include "parsing.hpp"
 
 int	parse_index(std::pair<e_context, void*> &context, const std::string &directive, const std::vector<std::string> &args, const size_t l)
 {

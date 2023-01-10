@@ -6,7 +6,7 @@
 /*   By: spayeur <marvin@42.fr>                     +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2023/01/09 16:57:15 by spayeur           #+#    #+#             */
-/*   Updated: 2023/01/09 16:58:06 by spayeur          ###   ########.fr       */
+/*   Updated: 2023/01/10 13:13:16 by spayeur          ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -16,7 +16,7 @@
 #include <string>
 #include <limits.h>
 #include "Location.hpp"
-#include "context.hpp"
+#include "parsing.hpp"
 
 int	parse_cgi(std::pair<e_context, void*> &context, const std::string &directive, const std::vector<std::string> &args, const size_t l)
 {
@@ -42,17 +42,7 @@ int	parse_cgi(std::pair<e_context, void*> &context, const std::string &directive
 	for (std::set<std::string>::const_iterator it = extensions.begin(); it != extensions.end(); it++)
 		cgi.insert(std::pair<std::string, std::string>(*it, cgi_path));
 
-	// Insert or assign
-	Location	&current_location = get_context<Location>(context);
-	for (std::map<std::string, std::string>::iterator it = cgi.begin(); it != cgi.end(); it++)
-	{
-		pos = current_location.cgi.find(it->first);
-		if (pos == current_location.cgi.end())
-			current_location.cgi.insert(*it);
-		else
-			pos->second = it->second;
-	}
-
+	get_context<Location>(context).cgi.insert(cgi.begin(), cgi.end());
 	get_context<Location>(context).set_flag_cgi(true);
 	return (0);
 }
